@@ -23,6 +23,38 @@ export default function Index() {
     setStats({ vwap: 0, sd: 0, delta: 0, last: 0 });
     setTrades([]);
     seen.current = new Set();
+  }  async function loadDay() {
+    try {
+      const from = Math.floor(new Date().setUTCHours(0, 0, 0, 0) / 1000);
+      const to = Math.floor(Date.now() / 1000);
+      const url = 'https://public-api.birdeye.so/defi/ohlcv/pair?address=' + POOL + '&type=5m&time_from=' + from + '&time_to=' + to;
+      const res = await fetch(url, { headers: { 'X-API-KEY': API_KEY, 'x-chain': 'solana', accept: 'application/json' } });
+      const json = await res.json();
+      const bars = json?.data?.items ?? [];
+      if (!bars.length) return;
+
+      const closes = bars.map((b: any) => Number(b.c)).filter((n: number) => n > 0).sort((a: number, b: number) => a - b);
+      const median = closes[Math.floor(closes.length / 2)];
+
+      let pv = 0, v = 0, pv2 = 0;
+      for (const b of bars) {
+        const px = Number(b.c);
+        const vol = Number(b.v);
+        if (!px || !vol) continue;
+        if (px > median * 1.5 || px < median * 0.5) continue;
+        pv += px * vol;
+        v += vol;
+        pv2 += px * px * vol;
+      }
+      if (!v) return;
+
+      acc.current = { pv, v, pv2, delta: 0 };
+      const vwap = pv / v;
+      const variance = Math.max(pv2 / v - vwap * vwap, 0);
+      setStats(s => ({ vwap, sd: Math.sqrt(variance), delta: 0, last: s.last }));
+    } catch (e) {
+      setErr(String(e));
+    }
   }
   async function poll() {
     try {
@@ -115,7 +147,7 @@ export default function Index() {
         {(['session', 'day', 'print'] as const).map(k => (
           <Text
             key={k}
-            onPress={() => resetAcc(k)}
+                        onPress={() => { resetAcc(k); if (k === 'day') loadDay(); }}
             style={[s.anchorBtn, anchor === k && s.anchorOn]}
           >
             {k === 'session' ? 'SESSION' : k === 'day' ? 'DAY' : 'LAST PRINT'}
