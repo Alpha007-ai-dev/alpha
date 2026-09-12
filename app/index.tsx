@@ -13,14 +13,24 @@ export default function Index() {
   const [stats, setStats] = useState({ vwap: 0, sd: 0, delta: 0, last: 0 });
   const seen = useRef<Set<string>>(new Set());
   const acc = useRef({ pv: 0, v: 0, pv2: 0, delta: 0 });
+  const [anchor, setAnchor] = useState<'session' | 'day' | 'print'>('session');
+  const anchorRef = useRef<'session' | 'day' | 'print'>('session');
 
+  function resetAcc(label: 'session' | 'day' | 'print') {
+    acc.current = { pv: 0, v: 0, pv2: 0, delta: 0 };
+    anchorRef.current = label;
+    setAnchor(label);
+    setStats({ vwap: 0, sd: 0, delta: 0, last: 0 });
+    setTrades([]);
+    seen.current = new Set();
+  }
   async function poll() {
     try {
       const url = 'https://public-api.birdeye.so/defi/txs/pair?address=' + POOL + '&offset=0&limit=50&sort_type=desc&tx_type=swap';
       const res = await fetch(url, { headers: { 'X-API-KEY': API_KEY, 'x-chain': 'solana', accept: 'application/json' } });
       const json = await res.json();
       const items = json?.data?.items ?? [];
-      const fresh: Trade[] = [];
+      let fresh: Trade[] = [];
       for (const it of items) {
         if (!it?.txHash || seen.current.has(it.txHash)) continue;
         const toSol = it.to?.address === SOL;
@@ -35,7 +45,13 @@ export default function Index() {
       }
       if (fresh.length) {
         fresh.sort((a, b) => a.time - b.time);
-        const a = acc.current;
+                if (anchorRef.current === 'print') {
+          const idx = fresh.map((t, i) => (t.size >= 100 ? i : -1)).filter(i => i >= 0).pop();
+          if (idx !== undefined) {
+            acc.current = { pv: 0, v: 0, pv2: 0, delta: 0 };
+            fresh = fresh.slice(idx);
+          }
+        }const a = acc.current;
         for (const t of fresh) {
           a.pv += t.price * t.size;
           a.v += t.size;
@@ -95,7 +111,17 @@ export default function Index() {
 
       {err ? <Text style={s.err}>{err}</Text> : null}
 
-      <Text style={s.tapeHead}>TAPE</Text>
+            <View style={s.anchorRow}>
+        {(['session', 'day', 'print'] as const).map(k => (
+          <Text
+            key={k}
+            onPress={() => resetAcc(k)}
+            style={[s.anchorBtn, anchor === k && s.anchorOn]}
+          >
+            {k === 'session' ? 'SESSION' : k === 'day' ? 'DAY' : 'LAST PRINT'}
+          </Text>
+        ))}
+      </View><Text style={s.tapeHead}>TAPE</Text>
       <FlatList
         style={s.list}
         data={trades}
@@ -127,7 +153,9 @@ const s = StyleSheet.create({
   label: { color: '#4b5563', fontSize: 10, letterSpacing: 1 },
   val: { color: '#e5e7eb', fontSize: 16, fontVariant: ['tabular-nums'], marginTop: 2 },
   err: { color: '#ef4444', fontSize: 11, marginTop: 10 },
-  tapeHead: { color: '#4b5563', fontSize: 10, letterSpacing: 2, marginTop: 24, marginBottom: 6 },
+    anchorRow: { flexDirection: 'row', marginTop: 20, gap: 8 },
+  anchorBtn: { color: '#4b5563', fontSize: 10, letterSpacing: 1, borderWidth: 1, borderColor: '#262626', paddingVertical: 6, paddingHorizontal: 10 },
+  anchorOn: { color: '#22c55e', borderColor: '#22c55e' },tapeHead: { color: '#4b5563', fontSize: 10, letterSpacing: 2, marginTop: 24, marginBottom: 6 },
   list: { flex: 1 },
   trade: { flexDirection: 'row', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#171717' },
   time: { color: '#4b5563', fontSize: 12, width: 90, fontVariant: ['tabular-nums'] },
