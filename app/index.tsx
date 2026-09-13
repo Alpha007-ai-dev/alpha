@@ -4,6 +4,7 @@ import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
 import { getActivity, Activity } from '../lib/activity';
 import { useMobileWallet } from '@wallet-ui/react-native-kit';
+import { getQuote, Quote, fmtAmount, PLATFORM_FEE_BPS } from '../lib/swap';
 
 const lv = (l: string) =>
   l === 'HIGH' ? '#ef4444' : l === 'MEDIUM' ? '#fbbf24' : l === 'LOW' ? '#22c55e' : '#6b7280';
@@ -37,6 +38,21 @@ export default function Index() {
   const [openExp, setOpenExp] = useState(false);
   const { account, connect, disconnect } = useMobileWallet();
   const [wBusy, setWBusy] = useState(false);
+  const [payAmt, setPayAmt] = useState('10');
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [qBusy, setQBusy] = useState(false);
+  const [qErr, setQErr] = useState<string | null>(null);
+
+  async function fetchQuote() {
+    if (!act) return;
+    const amt = parseFloat(payAmt);
+    if (!amt || amt <= 0) { setQErr('Enter an amount.'); return; }
+    setQBusy(true); setQErr(null); setQuote(null);
+    const q = await getQuote(act.mint, amt, act.decimals, act.symbol);
+    if (!q) setQErr('No route available for this token.');
+    setQuote(q);
+    setQBusy(false);
+  }
 
   async function walletPress() {
     setWBusy(true);
@@ -180,6 +196,27 @@ export default function Index() {
                 </View>
               ) : null}
 
+              <View style={s.swapBox}>
+                <Text style={s.swapHead}>SWAP</Text>
+                <Text style={s.swapLabel}>YOU PAY (USDC)</Text>
+                <TextInput style={s.swapInput} value={payAmt} onChangeText={setPayAmt} keyboardType='decimal-pad' placeholderTextColor='#4b5563' />
+                <Pressable style={s.quoteBtn} onPress={fetchQuote}>
+                  <Text style={s.quoteBtnText}>GET QUOTE</Text>
+                </Pressable>
+                {qBusy ? <ActivityIndicator style={{ marginTop: 12 }} color='#22c55e' /> : null}
+                {qErr ? <Text style={s.evErr}>{qErr}</Text> : null}
+                {quote ? (
+                  <View style={{ marginTop: 14 }}>
+                    <Text style={s.swapLabel}>YOU RECEIVE</Text>
+                    <Text style={s.swapOut}>{fmtAmount(quote.outUi)} {quote.outSymbol ? quote.outSymbol : ''}</Text>
+                    <View style={s.qRow}><Text style={s.qKey}>Price impact</Text><Text style={s.qVal}>{(quote.priceImpactPct * 100).toFixed(3)}%</Text></View>
+                    <View style={s.qRow}><Text style={s.qKey}>Max slippage</Text><Text style={s.qVal}>{(quote.slippageBps / 100).toFixed(2)}%</Text></View>
+                    <View style={s.qRow}><Text style={s.qKey}>Alpha fee ({quote.feeBps} bps)</Text><Text style={s.qVal}>{fmtAmount(quote.feeUi)} {quote.outSymbol ? quote.outSymbol : ''}</Text></View>
+                    <Text style={s.footNote}>Fee values come directly from the Jupiter quote.</Text>
+                  </View>
+                ) : null}
+              </View>
+
               <Text style={s.footNote}>
                 {act.knownCount}/{act.totalCount} metrics available · source: Jupiter
               </Text>
@@ -238,6 +275,16 @@ export default function Index() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0a0a0a' },
   brand: { color: '#e5e7eb', fontSize: 22, letterSpacing: 6, fontWeight: '700' },
+  swapBox: { borderWidth: 1, borderColor: '#22c55e', padding: 14, marginTop: 20 },
+  swapHead: { color: '#22c55e', fontSize: 11, letterSpacing: 2, fontWeight: '700', marginBottom: 12 },
+  swapLabel: { color: '#4b5563', fontSize: 9, letterSpacing: 1 },
+  swapInput: { borderWidth: 1, borderColor: '#262626', color: '#e5e7eb', padding: 10, fontSize: 18, marginTop: 4 },
+  swapOut: { color: '#22c55e', fontSize: 20, fontWeight: '700', marginTop: 4 },
+  quoteBtn: { borderWidth: 1, borderColor: '#22c55e', paddingVertical: 10, marginTop: 10, alignItems: 'center' },
+  quoteBtnText: { color: '#22c55e', fontSize: 11, letterSpacing: 2, fontWeight: '700' },
+  qRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  qKey: { color: '#6b7280', fontSize: 11 },
+  qVal: { color: '#d1d5db', fontSize: 11 },
   wallet: { borderWidth: 1, borderColor: '#525252', paddingVertical: 8, paddingHorizontal: 12, alignSelf: 'flex-start', marginBottom: 20 },
   walletText: { color: '#a3a3a3', fontSize: 10, letterSpacing: 1, fontWeight: '700' },
   tag: { color: '#4b5563', fontSize: 11, marginTop: 6, marginBottom: 24 },
@@ -292,4 +339,6 @@ const s = StyleSheet.create({
   sigSource: { color: '#374151', fontSize: 9 },
   sigEdge: { color: '#78716c', fontSize: 9 },
 });
+
+
 

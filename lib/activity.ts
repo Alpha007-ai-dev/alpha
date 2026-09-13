@@ -26,6 +26,7 @@ export type Activity = {
   mint: string;
   symbol?: string;
   name?: string;
+  decimals: number;
   snapshot: Snapshot;
   rows: Row[];
   metrics: Metric[];
@@ -219,6 +220,7 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     mint,
     symbol: tok.symbol,
     name: tok.name,
+    decimals: Number(tok.decimals ?? 9),
     snapshot,
     rows,
     metrics,
@@ -227,3 +229,4 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     totalCount: metrics.length,
   };
 }
+
