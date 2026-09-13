@@ -4,7 +4,7 @@ import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
 import { getActivity, Activity } from '../lib/activity';
 import { useMobileWallet } from '@wallet-ui/react-native-kit';
-import { getQuote, Quote, fmtAmount, PLATFORM_FEE_BPS, buildSwapTx, decodeTx } from '../lib/swap';
+import { getQuote, Quote, fmtAmount, buildSwapTx, decodeTx, PAY_TOKENS, PayToken } from '../lib/swap';
 
 const lv = (l: string) =>
   l === 'HIGH' ? '#ef4444' : l === 'MEDIUM' ? '#fbbf24' : l === 'LOW' ? '#22c55e' : '#6b7280';
@@ -56,7 +56,8 @@ export default function Index() {
     setSBusy(false);
   }
   const [wBusy, setWBusy] = useState(false);
-  const [payAmt, setPayAmt] = useState('10');
+  const [payAmt, setPayAmt] = useState('1');
+  const [pay, setPay] = useState<PayToken>(PAY_TOKENS[0]);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [qBusy, setQBusy] = useState(false);
   const [qErr, setQErr] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export default function Index() {
     const amt = parseFloat(payAmt);
     if (!amt || amt <= 0) { setQErr('Enter an amount.'); return; }
     setQBusy(true); setQErr(null); setQuote(null);
-    const q = await getQuote(act.mint, amt, act.decimals, act.symbol);
+    const q = await getQuote(pay, amt, act.mint, act.decimals, act.symbol);
     if (!q) setQErr('No route available for this token.');
     setQuote(q);
     setQBusy(false);
@@ -216,7 +217,15 @@ export default function Index() {
 
               <View style={s.swapBox}>
                 <Text style={s.swapHead}>SWAP</Text>
-                <Text style={s.swapLabel}>YOU PAY (USDC)</Text>
+                <Text style={s.swapLabel}>PAY WITH</Text>
+                <View style={s.payRow}>
+                  {PAY_TOKENS.map(t => (
+                    <Pressable key={t.key} onPress={() => { setPay(t); setQuote(null); }} style={[s.payBtn, pay.key === t.key && s.payBtnOn]}>
+                      <Text style={[s.payBtnText, pay.key === t.key && s.payBtnTextOn]}>{t.symbol}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={s.swapLabel}>YOU PAY ({pay.symbol})</Text>
                 <TextInput style={s.swapInput} value={payAmt} onChangeText={setPayAmt} keyboardType='decimal-pad' placeholderTextColor='#4b5563' />
                 <Pressable style={s.quoteBtn} onPress={fetchQuote}>
                   <Text style={s.quoteBtnText}>GET QUOTE</Text>
@@ -229,7 +238,7 @@ export default function Index() {
                     <Text style={s.swapOut}>{fmtAmount(quote.outUi)} {quote.outSymbol ? quote.outSymbol : ''}</Text>
                     <View style={s.qRow}><Text style={s.qKey}>Price impact</Text><Text style={s.qVal}>{(quote.priceImpactPct * 100).toFixed(3)}%</Text></View>
                     <View style={s.qRow}><Text style={s.qKey}>Max slippage</Text><Text style={s.qVal}>{(quote.slippageBps / 100).toFixed(2)}%</Text></View>
-                    <View style={s.qRow}><Text style={s.qKey}>Alpha fee ({quote.feeBps} bps)</Text><Text style={s.qVal}>{fmtAmount(quote.feeUi)} {quote.outSymbol ? quote.outSymbol : ''}</Text></View>
+                    <View style={s.qRow}><Text style={s.qKey}>Alpha fee{quote.feeBps ? ' (' + quote.feeBps + ' bps)' : ''}</Text><Text style={s.qVal}>{quote.feeBps ? fmtAmount(quote.feeUi) + ' ' + quote.feeSymbol : 'none'}</Text></View>
                     {account ? (
                       <Pressable style={s.swapBtn} onPress={doSwap} disabled={sBusy}>
                         <Text style={s.swapBtnText}>{sBusy ? 'SIGNING...' : 'SWAP'}</Text>
@@ -302,6 +311,11 @@ export default function Index() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0a0a0a' },
   brand: { color: '#e5e7eb', fontSize: 22, letterSpacing: 6, fontWeight: '700' },
+  payRow: { flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },
+  payBtn: { borderWidth: 1, borderColor: '#262626', paddingVertical: 7, paddingHorizontal: 14 },
+  payBtnOn: { borderColor: '#22c55e' },
+  payBtnText: { color: '#4b5563', fontSize: 11, fontWeight: '700' },
+  payBtnTextOn: { color: '#22c55e' },
   swapBtn: { backgroundColor: '#22c55e', paddingVertical: 14, marginTop: 16, alignItems: 'center' },
   swapBtnText: { color: '#0a0a0a', fontSize: 13, letterSpacing: 2, fontWeight: '700' },
   sigOk: { color: '#22c55e', fontSize: 11, marginTop: 10 },
@@ -369,6 +383,7 @@ const s = StyleSheet.create({
   sigSource: { color: '#374151', fontSize: 9 },
   sigEdge: { color: '#78716c', fontSize: 9 },
 });
+
 
 
 
