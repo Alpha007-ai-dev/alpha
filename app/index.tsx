@@ -3,6 +3,7 @@ import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Press
 import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
 import { getActivity, Activity } from '../lib/activity';
+import { useMobileWallet } from '@wallet-ui/react-native-kit';
 
 const lv = (l: string) =>
   l === 'HIGH' ? '#ef4444' : l === 'MEDIUM' ? '#fbbf24' : l === 'LOW' ? '#22c55e' : '#6b7280';
@@ -34,6 +35,19 @@ export default function Index() {
   const [evErr, setEvErr] = useState<string | null>(null);
   const [tab, setTab] = useState<'live' | 'profile'>('live');
   const [openExp, setOpenExp] = useState(false);
+  const { account, connect, disconnect } = useMobileWallet();
+  const [wBusy, setWBusy] = useState(false);
+
+  async function walletPress() {
+    setWBusy(true);
+    try {
+      if (account) await disconnect();
+      else await connect();
+    } catch (e) {
+      console.log('wallet error', e);
+    }
+    setWBusy(false);
+  }
 
   async function analyze(mint: string) {
     setEvBusy(true);
@@ -67,6 +81,12 @@ export default function Index() {
     <ScrollView style={s.root} contentContainerStyle={{ padding: 16, paddingTop: 60, paddingBottom: 60 }}>
       <Text style={s.brand}>ALPHA</Text>
       <Text style={s.tag}>Alpha never guesses a token. Alpha verifies it.</Text>
+
+      <Pressable style={s.wallet} onPress={walletPress} disabled={wBusy}>
+        <Text style={s.walletText}>
+          {wBusy ? 'WORKING...' : account ? String(account.address).slice(0, 4) + '...' + String(account.address).slice(-4) : 'CONNECT WALLET'}
+        </Text>
+      </Pressable>
 
       <TextInput
         style={s.input}
@@ -218,6 +238,8 @@ export default function Index() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0a0a0a' },
   brand: { color: '#e5e7eb', fontSize: 22, letterSpacing: 6, fontWeight: '700' },
+  wallet: { borderWidth: 1, borderColor: '#525252', paddingVertical: 8, paddingHorizontal: 12, alignSelf: 'flex-start', marginBottom: 20 },
+  walletText: { color: '#a3a3a3', fontSize: 10, letterSpacing: 1, fontWeight: '700' },
   tag: { color: '#4b5563', fontSize: 11, marginTop: 6, marginBottom: 24 },
   input: { borderWidth: 1, borderColor: '#262626', color: '#e5e7eb', padding: 12, minHeight: 90, fontSize: 13, textAlignVertical: 'top' },
   btn: { borderWidth: 1, borderColor: '#22c55e', paddingVertical: 12, marginTop: 12, alignItems: 'center' },
@@ -270,3 +292,4 @@ const s = StyleSheet.create({
   sigSource: { color: '#374151', fontSize: 9 },
   sigEdge: { color: '#78716c', fontSize: 9 },
 });
+
