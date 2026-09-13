@@ -2,22 +2,49 @@
 import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Pressable } from 'react-native';
 import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
+import { getActivity, Activity } from '../lib/activity';
 
 const lv = (l: string) =>
-  l === 'HIGH' ? '#ef4444' : l === 'MEDIUM' ? '#fbbf24' : l === 'LOW' ? '#22c55e' : '#4b5563';
+  l === 'HIGH' ? '#ef4444' : l === 'MEDIUM' ? '#fbbf24' : l === 'LOW' ? '#22c55e' : '#6b7280';
+
+const av = (l: string) =>
+  l === 'SHARP' ? '#ef4444' : l === 'NOTABLE' ? '#fbbf24' : l === 'CALM' ? '#22c55e' : '#6b7280';
+
+const riskColor = (r: string) =>
+  r === 'HIGH' ? '#ef4444' : r === 'MEDIUM' ? '#fbbf24' : r === 'LOW' ? '#22c55e' : '#6b7280';
+
+const fmtMoney = (v?: number) => {
+  if (v === undefined || isNaN(v) || v <= 0) return '--';
+  return v >= 1e9 ? '$' + (v / 1e9).toFixed(2) + 'B'
+    : v >= 1e6 ? '$' + (v / 1e6).toFixed(2) + 'M'
+    : v >= 1e3 ? '$' + (v / 1e3).toFixed(1) + 'K'
+    : '$' + v.toFixed(v < 1 ? 6 : 2);
+};
+
+const tint = (t: string) =>
+  t.startsWith('-') ? '#ef4444' : t.startsWith('+') ? '#22c55e' : '#9ca3af';
 
 export default function Index() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<Result | null>(null);
   const [ev, setEv] = useState<Evidence | null>(null);
+  const [act, setAct] = useState<Activity | null>(null);
   const [evBusy, setEvBusy] = useState(false);
+  const [evErr, setEvErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<'live' | 'profile'>('live');
+  const [openExp, setOpenExp] = useState(false);
 
   async function analyze(mint: string) {
     setEvBusy(true);
     setEv(null);
-    const e = await getEvidence(mint);
+    setAct(null);
+    setEvErr(null);
+    setOpenExp(false);
+    const [e, a] = await Promise.all([getEvidence(mint), getActivity(mint)]);
+    if (!e && !a) setEvErr('No market data available for this token.');
     setEv(e);
+    setAct(a);
     setEvBusy(false);
   }
 
@@ -25,6 +52,8 @@ export default function Index() {
     setBusy(true);
     setRes(null);
     setEv(null);
+    setAct(null);
+    setEvErr(null);
     const r = await resolve(input);
     setRes(r);
     setBusy(false);
@@ -56,21 +85,109 @@ export default function Index() {
 
       {busy ? <ActivityIndicator style={{ marginTop: 24 }} color="#22c55e" /> : null}
       {evBusy ? <ActivityIndicator style={{ marginTop: 24 }} color="#3b82f6" /> : null}
+      {evErr ? <Text style={s.evErr}>{evErr}</Text> : null}
 
-      {ev ? (
+      {act ? (
         <View style={{ marginTop: 24 }}>
-          <Text style={[s.status, { color: lv(ev.risk), borderColor: lv(ev.risk) }]}>RISK: {ev.risk}</Text>
-          <Text style={s.meta}>ANALYZED: {ev.symbol ? '$' + ev.symbol : ev.mint}</Text>
-          {ev.signals.map(sig => (
-            <View key={sig.key} style={s.sigRow}>
-              <View style={s.sigHead}>
-                <Text style={s.sigLabel}>{sig.label}</Text>
-                <Text style={[s.sigLevel, { color: lv(sig.level) }]}>{sig.level}</Text>
+          <Text style={s.tokenLine}>{act.symbol ? '$' + act.symbol : act.mint.slice(0, 8)}</Text>
+          {act.name ? <Text style={s.tokenName}>{act.name}</Text> : null}
+
+          <View style={s.snapGrid}>
+            <View style={s.snapCell}><Text style={s.snapLabel}>PRICE</Text><Text style={s.snapVal}>{fmtMoney(act.snapshot.price)}</Text></View>
+            <View style={s.snapCell}><Text style={s.snapLabel}>MCAP</Text><Text style={s.snapVal}>{fmtMoney(act.snapshot.mcap)}</Text></View>
+            <View style={s.snapCell}><Text style={s.snapLabel}>FDV</Text><Text style={s.snapVal}>{fmtMoney(act.snapshot.fdv)}</Text></View>
+            <View style={s.snapCell}><Text style={s.snapLabel}>LIQUIDITY</Text><Text style={s.snapVal}>{fmtMoney(act.snapshot.liquidity)}</Text></View>
+            <View style={s.snapCell}><Text style={s.snapLabel}>HOLDERS</Text><Text style={s.snapVal}>{act.snapshot.holders && !isNaN(act.snapshot.holders) ? Math.round(act.snapshot.holders).toLocaleString() : '--'}</Text></View>
+            <View style={s.snapCell}><Text style={s.snapLabel}>AGE</Text><Text style={s.snapVal}>{act.snapshot.ageDays !== undefined ? act.snapshot.ageDays + 'd' : '--'}</Text></View>
+          </View>
+
+          <View style={s.tabs}>
+            <Pressable onPress={() => setTab('live')} style={[s.tab, tab === 'live' && s.tabOn]}>
+              <Text style={[s.tabText, tab === 'live' && s.tabTextOn]}>LIVE ACTIVITY</Text>
+            </Pressable>
+            <Pressable onPress={() => setTab('profile')} style={[s.tab, tab === 'profile' && s.tabOn]}>
+              <Text style={[s.tabText, tab === 'profile' && s.tabTextOn]}>TOKEN PROFILE</Text>
+            </Pressable>
+          </View>
+
+          {tab === 'live' ? (
+            <View>
+              <View style={s.tableHead}>
+                <Text style={[s.thLabel]}></Text>
+                <Text style={s.th}>5M</Text>
+                <Text style={s.th}>1H</Text>
+                <Text style={s.th}>6H</Text>
+                <Text style={s.th}>24H</Text>
               </View>
-              <Text style={s.sigValue}>{sig.value}</Text>
-              <Text style={s.sigDetail}>{sig.detail}</Text>
+              {act.rows.map(r => (
+                <View key={r.label} style={s.tr}>
+                  <Text style={s.tdLabel}>{r.label}</Text>
+                  <Text style={[s.td, { color: tint(r.m5) }]}>{r.m5}</Text>
+                  <Text style={[s.td, { color: tint(r.h1) }]}>{r.h1}</Text>
+                  <Text style={[s.td, { color: tint(r.h6) }]}>{r.h6}</Text>
+                  <Text style={[s.td, { color: tint(r.h24) }]}>{r.h24}</Text>
+                </View>
+              ))}
+
+              {act.metrics.map(m => (
+                <View key={m.key} style={s.sigRow}>
+                  <View style={s.sigHead}>
+                    <Text style={s.sigLabel}>{m.label}</Text>
+                    <Text style={[s.sigLevel, { color: av(m.level) }]}>{m.level}</Text>
+                  </View>
+                  <Text style={[s.sigValue, { color: av(m.level) }]}>{m.value}</Text>
+                  <Text style={s.sigDetail}>{m.fact}</Text>
+                  {m.reading ? <Text style={s.reading}>{m.reading}</Text> : null}
+                </View>
+              ))}
+
+              <Pressable style={s.expBtn} onPress={() => setOpenExp(!openExp)}>
+                <Text style={s.expBtnText}>ALPHA EXPLANATION {openExp ? '-' : '+'}</Text>
+              </Pressable>
+
+              {openExp ? (
+                <View>
+                  {act.explanation.map((p, i) => (
+                    <View key={i} style={s.para}>
+                      <Text style={s.paraTitle}>{p.title}</Text>
+                      {p.facts.map((f, k) => <Text key={k} style={s.paraFact}>{f}</Text>)}
+                      <Text style={s.paraText}>{p.text}</Text>
+                    </View>
+                  ))}
+                  <Text style={s.footNote}>
+                    Generated from the values above. Alpha does not predict price.
+                  </Text>
+                </View>
+              ) : null}
+
+              <Text style={s.footNote}>
+                {act.knownCount}/{act.totalCount} metrics available · source: Jupiter
+              </Text>
             </View>
-          ))}
+          ) : null}
+
+          {tab === 'profile' && ev ? (
+            <View>
+              <Text style={[s.status, { color: riskColor(ev.risk), borderColor: riskColor(ev.risk) }]}>
+                {ev.risk === 'INSUFFICIENT_EVIDENCE' ? 'INSUFFICIENT EVIDENCE' : 'PROFILE: ' + ev.risk}
+              </Text>
+              <Text style={s.meta}>EVIDENCE QUALITY {ev.verifiedCount}/{ev.totalCount} SIGNALS VERIFIED</Text>
+              {ev.signals.map(sig => (
+                <View key={sig.key} style={s.sigRow}>
+                  <View style={s.sigHead}>
+                    <Text style={s.sigLabel}>{sig.label}</Text>
+                    <Text style={[s.sigLevel, { color: lv(sig.level) }]}>{sig.level}</Text>
+                  </View>
+                  <Text style={s.sigValue}>{sig.value}</Text>
+                  <Text style={s.sigDetail}>{sig.detail}</Text>
+                  <View style={s.sigFoot}>
+                    <Text style={s.sigSource}>source: {sig.source}</Text>
+                    {sig.nearEdge ? <Text style={s.sigEdge}>near threshold</Text> : null}
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -83,16 +200,9 @@ export default function Index() {
           {res.candidates.map((c, i) => (
             <View key={i} style={s.card}>
               <Text style={s.sym}>{c.symbol ? '$' + c.symbol : 'UNKNOWN SYMBOL'}</Text>
-              {c.verified ? (
-                <Text style={s.badge}>VERIFIED BY JUPITER</Text>
-              ) : (
-                <Text style={s.warn}>NOT VERIFIED</Text>
-              )}
+              {c.verified ? <Text style={s.badge}>VERIFIED BY JUPITER</Text> : <Text style={s.warn}>NOT VERIFIED</Text>}
               {c.name ? <Text style={s.name}>{c.name}</Text> : null}
               <Text style={s.mint}>{c.mint}</Text>
-              {c.liquidity !== undefined ? (
-                <Text style={s.liq}>LIQUIDITY ${Math.round(c.liquidity).toLocaleString()}</Text>
-              ) : null}
               <Text style={s.src}>via {c.source}</Text>
               <Pressable style={s.analyzeBtn} onPress={() => analyze(c.mint)}>
                 <Text style={s.analyzeText}>ANALYZE</Text>
@@ -112,16 +222,41 @@ const s = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#262626', color: '#e5e7eb', padding: 12, minHeight: 90, fontSize: 13, textAlignVertical: 'top' },
   btn: { borderWidth: 1, borderColor: '#22c55e', paddingVertical: 12, marginTop: 12, alignItems: 'center' },
   btnText: { color: '#22c55e', letterSpacing: 2, fontSize: 12, fontWeight: '700' },
+  tokenLine: { color: '#e5e7eb', fontSize: 20, fontWeight: '700' },
+  tokenName: { color: '#6b7280', fontSize: 12, marginTop: 2 },
+  snapGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 14, borderWidth: 1, borderColor: '#262626' },
+  snapCell: { width: '33.33%', padding: 10 },
+  snapLabel: { color: '#4b5563', fontSize: 9, letterSpacing: 1 },
+  snapVal: { color: '#e5e7eb', fontSize: 13, fontWeight: '600', marginTop: 2 },
+  tabs: { flexDirection: 'row', gap: 8, marginTop: 16, marginBottom: 14 },
+  tab: { borderWidth: 1, borderColor: '#262626', paddingVertical: 8, paddingHorizontal: 12, flex: 1, alignItems: 'center' },
+  tabOn: { borderColor: '#3b82f6' },
+  tabText: { color: '#4b5563', fontSize: 10, letterSpacing: 1, fontWeight: '700' },
+  tabTextOn: { color: '#3b82f6' },
+  tableHead: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#262626' },
+  thLabel: { width: 72 },
+  th: { flex: 1, color: '#4b5563', fontSize: 9, letterSpacing: 1, textAlign: 'right' },
+  tr: { flexDirection: 'row', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#171717' },
+  tdLabel: { width: 72, color: '#9ca3af', fontSize: 11 },
+  td: { flex: 1, fontSize: 11, textAlign: 'right' },
   status: { alignSelf: 'flex-start', borderWidth: 1, paddingVertical: 6, paddingHorizontal: 12, fontSize: 12, letterSpacing: 2, fontWeight: '700' },
-  meta: { color: '#4b5563', fontSize: 10, letterSpacing: 1, marginTop: 10 },
+  meta: { color: '#6b7280', fontSize: 10, letterSpacing: 1, marginTop: 10 },
   note: { fontSize: 12, marginTop: 8 },
+  evErr: { color: '#ef4444', fontSize: 12, marginTop: 20 },
+  footNote: { color: '#374151', fontSize: 9, marginTop: 12 },
+  reading: { color: '#9ca3af', fontSize: 11, marginTop: 6, fontStyle: 'italic' },
+  expBtn: { borderWidth: 1, borderColor: '#8b5cf6', paddingVertical: 10, marginTop: 16, alignItems: 'center' },
+  expBtnText: { color: '#8b5cf6', fontSize: 11, letterSpacing: 2, fontWeight: '700' },
+  para: { borderLeftWidth: 2, borderLeftColor: '#8b5cf6', paddingLeft: 12, marginTop: 14 },
+  paraTitle: { color: '#e5e7eb', fontSize: 13, fontWeight: '700' },
+  paraFact: { color: '#6b7280', fontSize: 11, marginTop: 3 },
+  paraText: { color: '#d1d5db', fontSize: 12, marginTop: 6, lineHeight: 17 },
   card: { borderWidth: 1, borderColor: '#262626', padding: 12, marginTop: 12 },
   sym: { color: '#e5e7eb', fontSize: 16, fontWeight: '700' },
   badge: { color: '#22c55e', fontSize: 10, letterSpacing: 1, marginTop: 4 },
   warn: { color: '#ef4444', fontSize: 10, letterSpacing: 1, marginTop: 4 },
   name: { color: '#9ca3af', fontSize: 12, marginTop: 4 },
   mint: { color: '#6b7280', fontSize: 10, marginTop: 8 },
-  liq: { color: '#22c55e', fontSize: 11, marginTop: 6, letterSpacing: 1 },
   src: { color: '#4b5563', fontSize: 10, marginTop: 4 },
   analyzeBtn: { borderWidth: 1, borderColor: '#3b82f6', paddingVertical: 8, marginTop: 10, alignItems: 'center' },
   analyzeText: { color: '#3b82f6', fontSize: 11, letterSpacing: 2, fontWeight: '700' },
@@ -129,6 +264,9 @@ const s = StyleSheet.create({
   sigHead: { flexDirection: 'row', justifyContent: 'space-between' },
   sigLabel: { color: '#e5e7eb', fontSize: 13, fontWeight: '600' },
   sigLevel: { fontSize: 10, letterSpacing: 1, fontWeight: '700' },
-  sigValue: { color: '#9ca3af', fontSize: 12, marginTop: 6 },
+  sigValue: { color: '#9ca3af', fontSize: 14, marginTop: 6, fontWeight: '600' },
   sigDetail: { color: '#4b5563', fontSize: 11, marginTop: 4 },
+  sigFoot: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  sigSource: { color: '#374151', fontSize: 9 },
+  sigEdge: { color: '#78716c', fontSize: 9 },
 });
