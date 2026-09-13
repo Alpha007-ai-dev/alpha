@@ -1,4 +1,7 @@
-﻿export const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+﻿import { getTransactionDecoder } from '@solana/transactions';
+import { getBase64Encoder } from '@solana/codecs-strings';
+
+export const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 export const USDC_DECIMALS = 6;
 export const PLATFORM_FEE_BPS = 20;
 
@@ -31,7 +34,7 @@ export async function getQuote(
       '&outputMint=' + outputMint +
       '&amount=' + amount +
       '&slippageBps=50' +
-      '&platformFeeBps=' + PLATFORM_FEE_BPS;
+      '';
 
     const r = await fetch(url);
     const q = await r.json();
@@ -67,3 +70,32 @@ export function fmtAmount(n: number): string {
   if (n >= 0.0001) return n.toFixed(6);
   return n.toExponential(3);
 }
+
+
+export async function buildSwapTx(quote: Quote, userPublicKey: string): Promise<string | null> {
+  try {
+    const r = await fetch('https://lite-api.jup.ag/swap/v1/swap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        quoteResponse: quote.raw,
+        userPublicKey,
+        wrapAndUnwrapSol: true,
+        dynamicComputeUnitLimit: true,
+      }),
+    });
+    const j = await r.json();
+    if (!j?.swapTransaction) { console.log('JUP SWAP ERROR', JSON.stringify(j)); return null; }
+    return j.swapTransaction as string;
+  } catch {
+    return null;
+  }
+}
+
+
+export function decodeTx(base64: string) {
+  const bytes = getBase64Encoder().encode(base64);
+  return getTransactionDecoder().decode(bytes);
+}
+
+

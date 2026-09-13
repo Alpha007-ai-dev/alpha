@@ -4,7 +4,7 @@ import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
 import { getActivity, Activity } from '../lib/activity';
 import { useMobileWallet } from '@wallet-ui/react-native-kit';
-import { getQuote, Quote, fmtAmount, PLATFORM_FEE_BPS } from '../lib/swap';
+import { getQuote, Quote, fmtAmount, PLATFORM_FEE_BPS, buildSwapTx, decodeTx } from '../lib/swap';
 
 const lv = (l: string) =>
   l === 'HIGH' ? '#ef4444' : l === 'MEDIUM' ? '#fbbf24' : l === 'LOW' ? '#22c55e' : '#6b7280';
@@ -36,7 +36,25 @@ export default function Index() {
   const [evErr, setEvErr] = useState<string | null>(null);
   const [tab, setTab] = useState<'live' | 'profile'>('live');
   const [openExp, setOpenExp] = useState(false);
-  const { account, connect, disconnect } = useMobileWallet();
+  const { account, connect, disconnect, signAndSendTransaction } = useMobileWallet();
+  const [sBusy, setSBusy] = useState(false);
+  const [sig, setSig] = useState<string | null>(null);
+  const [sErr, setSErr] = useState<string | null>(null);
+
+  async function doSwap() {
+    if (!quote || !account) return;
+    setSBusy(true); setSErr(null); setSig(null);
+    try {
+      const b64 = await buildSwapTx(quote, String(account.address));
+      if (!b64) { setSErr('Could not build transaction.'); setSBusy(false); return; }
+      const tx = decodeTx(b64);
+      const result = await signAndSendTransaction(tx, BigInt(quote.contextSlot));
+      setSig(String(Array.isArray(result) ? result[0] : result));
+    } catch (e) {
+      setSErr(String(e));
+    }
+    setSBusy(false);
+  }
   const [wBusy, setWBusy] = useState(false);
   const [payAmt, setPayAmt] = useState('10');
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -212,6 +230,15 @@ export default function Index() {
                     <View style={s.qRow}><Text style={s.qKey}>Price impact</Text><Text style={s.qVal}>{(quote.priceImpactPct * 100).toFixed(3)}%</Text></View>
                     <View style={s.qRow}><Text style={s.qKey}>Max slippage</Text><Text style={s.qVal}>{(quote.slippageBps / 100).toFixed(2)}%</Text></View>
                     <View style={s.qRow}><Text style={s.qKey}>Alpha fee ({quote.feeBps} bps)</Text><Text style={s.qVal}>{fmtAmount(quote.feeUi)} {quote.outSymbol ? quote.outSymbol : ''}</Text></View>
+                    {account ? (
+                      <Pressable style={s.swapBtn} onPress={doSwap} disabled={sBusy}>
+                        <Text style={s.swapBtnText}>{sBusy ? 'SIGNING...' : 'SWAP'}</Text>
+                      </Pressable>
+                    ) : (
+                      <Text style={s.footNote}>Connect a wallet to swap.</Text>
+                    )}
+                    {sErr ? <Text style={s.evErr}>{sErr}</Text> : null}
+                    {sig ? <Text style={s.sigOk}>Sent: {sig.slice(0, 20)}...</Text> : null}
                     <Text style={s.footNote}>Fee values come directly from the Jupiter quote.</Text>
                   </View>
                 ) : null}
@@ -275,6 +302,9 @@ export default function Index() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0a0a0a' },
   brand: { color: '#e5e7eb', fontSize: 22, letterSpacing: 6, fontWeight: '700' },
+  swapBtn: { backgroundColor: '#22c55e', paddingVertical: 14, marginTop: 16, alignItems: 'center' },
+  swapBtnText: { color: '#0a0a0a', fontSize: 13, letterSpacing: 2, fontWeight: '700' },
+  sigOk: { color: '#22c55e', fontSize: 11, marginTop: 10 },
   swapBox: { borderWidth: 1, borderColor: '#22c55e', padding: 14, marginTop: 20 },
   swapHead: { color: '#22c55e', fontSize: 11, letterSpacing: 2, fontWeight: '700', marginBottom: 12 },
   swapLabel: { color: '#4b5563', fontSize: 9, letterSpacing: 1 },
@@ -339,6 +369,7 @@ const s = StyleSheet.create({
   sigSource: { color: '#374151', fontSize: 9 },
   sigEdge: { color: '#78716c', fontSize: 9 },
 });
+
 
 
 
