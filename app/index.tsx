@@ -1,19 +1,16 @@
-﻿import { useState } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Pressable } from 'react-native';
 import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
 import { getActivity, Activity } from '../lib/activity';
+import { logObservation, resolveOutcomes, journalStats, exportJournal } from '../lib/journal';
 import { useMobileWallet } from '@wallet-ui/react-native-kit';
 import { getQuote, Quote, fmtAmount, buildSwapTx, decodeTx, PAY_TOKENS, PayToken } from '../lib/swap';
 
-const lv = (l: string) =>
-  l === 'HIGH' ? '#ef4444' : l === 'MEDIUM' ? '#fbbf24' : l === 'LOW' ? '#22c55e' : '#6b7280';
-
-const av = (l: string) =>
-  l === 'SHARP' ? '#ef4444' : l === 'NOTABLE' ? '#fbbf24' : l === 'CALM' ? '#22c55e' : '#6b7280';
-
-const riskColor = (r: string) =>
-  r === 'HIGH' ? '#ef4444' : r === 'MEDIUM' ? '#fbbf24' : r === 'LOW' ? '#22c55e' : '#6b7280';
+const lv = (l: string) => (l === 'HIGH' ? '#ef4444' : l === 'MEDIUM' ? '#fbbf24' : l === 'LOW' ? '#22c55e' : '#6b7280');
+const av = (l: string) => (l === 'SHARP' ? '#ef4444' : l === 'NOTABLE' ? '#fbbf24' : l === 'CALM' ? '#22c55e' : '#6b7280');
+const riskColor = (r: string) => (r === 'HIGH' ? '#ef4444' : r === 'MEDIUM' ? '#fbbf24' : r === 'LOW' ? '#22c55e' : '#6b7280');
+const tint = (t: string) => (t.startsWith('-') ? '#ef4444' : t.startsWith('+') ? '#22c55e' : '#6b7280');
 
 const fmtMoney = (v?: number) => {
   if (v === undefined || isNaN(v) || v <= 0) return '--';
@@ -22,9 +19,6 @@ const fmtMoney = (v?: number) => {
     : v >= 1e3 ? '$' + (v / 1e3).toFixed(1) + 'K'
     : '$' + v.toFixed(v < 1 ? 6 : 2);
 };
-
-const tint = (t: string) =>
-  t.startsWith('-') ? '#ef4444' : t.startsWith('+') ? '#22c55e' : '#9ca3af';
 
 export default function Index() {
   const [input, setInput] = useState('');
@@ -36,10 +30,48 @@ export default function Index() {
   const [evErr, setEvErr] = useState<string | null>(null);
   const [tab, setTab] = useState<'live' | 'profile'>('live');
   const [openExp, setOpenExp] = useState(false);
+  const [jStats, setJStats] = useState({ total: 0, resolved: 0, pending: 0 });
+  const [jText, setJText] = useState<string | null>(null);
+
   const { account, connect, disconnect, signAndSendTransaction } = useMobileWallet();
+  const [wBusy, setWBusy] = useState(false);
+  const [payAmt, setPayAmt] = useState('1');
+  const [pay, setPay] = useState<PayToken>(PAY_TOKENS[0]);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [qBusy, setQBusy] = useState(false);
+  const [qErr, setQErr] = useState<string | null>(null);
   const [sBusy, setSBusy] = useState(false);
   const [sig, setSig] = useState<string | null>(null);
   const [sErr, setSErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      await resolveOutcomes();
+      setJStats(await journalStats());
+    })();
+  }, []);
+
+  async function walletPress() {
+    setWBusy(true);
+    try {
+      if (account) await disconnect();
+      else await connect();
+    } catch (e) {
+      console.log('wallet error', e);
+    }
+    setWBusy(false);
+  }
+
+  async function fetchQuote() {
+    if (!act) return;
+    const amt = parseFloat(payAmt);
+    if (!amt || amt <= 0) { setQErr('Enter an amount.'); return; }
+    setQBusy(true); setQErr(null); setQuote(null);
+    const q = await getQuote(pay, amt, act.mint, act.decimals, act.symbol);
+    if (!q) setQErr('No route available for this token.');
+    setQuote(q);
+    setQBusy(false);
+  }
 
   async function doSwap() {
     if (!quote || !account) return;
@@ -55,62 +87,24 @@ export default function Index() {
     }
     setSBusy(false);
   }
-  const [wBusy, setWBusy] = useState(false);
-  const [payAmt, setPayAmt] = useState('1');
-  const [pay, setPay] = useState<PayToken>(PAY_TOKENS[0]);
-  const [quote, setQuote] = useState<Quote | null>(null);
-  const [qBusy, setQBusy] = useState(false);
-  const [qErr, setQErr] = useState<string | null>(null);
-
-  async function fetchQuote() {
-    if (!act) return;
-    const amt = parseFloat(payAmt);
-    if (!amt || amt <= 0) { setQErr('Enter an amount.'); return; }
-    setQBusy(true); setQErr(null); setQuote(null);
-    const q = await getQuote(pay, amt, act.mint, act.decimals, act.symbol);
-    if (!q) setQErr('No route available for this token.');
-    setQuote(q);
-    setQBusy(false);
-  }
-
-  async function walletPress() {
-    setWBusy(true);
-    try {
-      if (account) await disconnect();
-      else await connect();
-    } catch (e) {
-      console.log('wallet error', e);
-    }
-    setWBusy(false);
-  }
 
   async function analyze(mint: string) {
-    setEvBusy(true);
-    setEv(null);
-    setAct(null);
-    setEvErr(null);
-    setOpenExp(false);
+    setEvBusy(true); setEv(null); setAct(null); setEvErr(null); setOpenExp(false);
+    setQuote(null); setSig(null); setSErr(null);
     const [e, a] = await Promise.all([getEvidence(mint), getActivity(mint)]);
     if (!e && !a) setEvErr('No market data available for this token.');
-    setEv(e);
-    setAct(a);
-    setEvBusy(false);
+    setEv(e); setAct(a); setEvBusy(false);
+    if (a) { await logObservation(a); setJStats(await journalStats()); }
   }
 
   async function run() {
-    setBusy(true);
-    setRes(null);
-    setEv(null);
-    setAct(null);
-    setEvErr(null);
+    setBusy(true); setRes(null); setEv(null); setAct(null); setEvErr(null);
     const r = await resolve(input);
-    setRes(r);
-    setBusy(false);
+    setRes(r); setBusy(false);
     if (r.status === 'VERIFIED' && r.candidates[0]) analyze(r.candidates[0].mint);
   }
 
-  const statusColor =
-    res?.status === 'VERIFIED' ? '#22c55e' : res?.status === 'AMBIGUOUS' ? '#fbbf24' : '#ef4444';
+  const statusColor = res?.status === 'VERIFIED' ? '#22c55e' : res?.status === 'AMBIGUOUS' ? '#fbbf24' : '#ef4444';
 
   return (
     <ScrollView style={s.root} contentContainerStyle={{ padding: 16, paddingTop: 60, paddingBottom: 60 }}>
@@ -153,8 +147,10 @@ export default function Index() {
             <View style={s.snapCell}><Text style={s.snapLabel}>FDV</Text><Text style={s.snapVal}>{fmtMoney(act.snapshot.fdv)}</Text></View>
             <View style={s.snapCell}><Text style={s.snapLabel}>LIQUIDITY</Text><Text style={s.snapVal}>{fmtMoney(act.snapshot.liquidity)}</Text></View>
             <View style={s.snapCell}><Text style={s.snapLabel}>HOLDERS</Text><Text style={s.snapVal}>{act.snapshot.holders && !isNaN(act.snapshot.holders) ? Math.round(act.snapshot.holders).toLocaleString() : '--'}</Text></View>
-            <View style={s.snapCell}><Text style={s.snapLabel}>AGE</Text><Text style={s.snapVal}>{act.snapshot.ageDays !== undefined ? act.snapshot.ageDays + 'd' : '--'}</Text></View>
+            <View style={s.snapCell}><Text style={s.snapLabel}>AGE</Text><Text style={s.snapVal}>{act.snapshot.ageMinutes !== undefined && act.snapshot.ageMinutes < 1440 ? act.snapshot.ageMinutes + 'm' : act.snapshot.ageDays !== undefined ? act.snapshot.ageDays + 'd' : '--'}</Text></View>
           </View>
+
+          {act.youngNote ? <Text style={s.youngNote}>{act.youngNote}</Text> : null}
 
           <View style={s.tabs}>
             <Pressable onPress={() => setTab('live')} style={[s.tab, tab === 'live' && s.tabOn]}>
@@ -168,7 +164,7 @@ export default function Index() {
           {tab === 'live' ? (
             <View>
               <View style={s.tableHead}>
-                <Text style={[s.thLabel]}></Text>
+                <Text style={s.thLabel}></Text>
                 <Text style={s.th}>5M</Text>
                 <Text style={s.th}>1H</Text>
                 <Text style={s.th}>6H</Text>
@@ -209,9 +205,7 @@ export default function Index() {
                       <Text style={s.paraText}>{p.text}</Text>
                     </View>
                   ))}
-                  <Text style={s.footNote}>
-                    Generated from the values above. Alpha does not predict price.
-                  </Text>
+                  <Text style={s.footNote}>Generated from the values above. Alpha does not predict price.</Text>
                 </View>
               ) : null}
 
@@ -226,16 +220,16 @@ export default function Index() {
                   ))}
                 </View>
                 <Text style={s.swapLabel}>YOU PAY ({pay.symbol})</Text>
-                <TextInput style={s.swapInput} value={payAmt} onChangeText={setPayAmt} keyboardType='decimal-pad' placeholderTextColor='#4b5563' />
+                <TextInput style={s.swapInput} value={payAmt} onChangeText={setPayAmt} keyboardType="decimal-pad" placeholderTextColor="#4b5563" />
                 <Pressable style={s.quoteBtn} onPress={fetchQuote}>
                   <Text style={s.quoteBtnText}>GET QUOTE</Text>
                 </Pressable>
-                {qBusy ? <ActivityIndicator style={{ marginTop: 12 }} color='#22c55e' /> : null}
+                {qBusy ? <ActivityIndicator style={{ marginTop: 12 }} color="#22c55e" /> : null}
                 {qErr ? <Text style={s.evErr}>{qErr}</Text> : null}
                 {quote ? (
                   <View style={{ marginTop: 14 }}>
                     <Text style={s.swapLabel}>YOU RECEIVE</Text>
-                    <Text style={s.swapOut}>{fmtAmount(quote.outUi)} {quote.outSymbol ? quote.outSymbol : ''}</Text>
+                    <Text style={s.swapOut}>{fmtAmount(quote.outUi)} {quote.outSymbol ?? ''}</Text>
                     <View style={s.qRow}><Text style={s.qKey}>Price impact</Text><Text style={s.qVal}>{(quote.priceImpactPct * 100).toFixed(3)}%</Text></View>
                     <View style={s.qRow}><Text style={s.qKey}>Max slippage</Text><Text style={s.qVal}>{(quote.slippageBps / 100).toFixed(2)}%</Text></View>
                     <View style={s.qRow}><Text style={s.qKey}>Alpha fee{quote.feeBps ? ' (' + quote.feeBps + ' bps)' : ''}</Text><Text style={s.qVal}>{quote.feeBps ? fmtAmount(quote.feeUi) + ' ' + quote.feeSymbol : 'none'}</Text></View>
@@ -253,9 +247,7 @@ export default function Index() {
                 ) : null}
               </View>
 
-              <Text style={s.footNote}>
-                {act.knownCount}/{act.totalCount} metrics available · source: Jupiter
-              </Text>
+              <Text style={s.footNote}>{act.knownCount}/{act.totalCount} metrics available · source: Jupiter</Text>
             </View>
           ) : null}
 
@@ -265,17 +257,17 @@ export default function Index() {
                 {ev.risk === 'INSUFFICIENT_EVIDENCE' ? 'INSUFFICIENT EVIDENCE' : 'PROFILE: ' + ev.risk}
               </Text>
               <Text style={s.meta}>EVIDENCE QUALITY {ev.verifiedCount}/{ev.totalCount} SIGNALS VERIFIED</Text>
-              {ev.signals.map(sig => (
-                <View key={sig.key} style={s.sigRow}>
+              {ev.signals.map(sig2 => (
+                <View key={sig2.key} style={s.sigRow}>
                   <View style={s.sigHead}>
-                    <Text style={s.sigLabel}>{sig.label}</Text>
-                    <Text style={[s.sigLevel, { color: lv(sig.level) }]}>{sig.level}</Text>
+                    <Text style={s.sigLabel}>{sig2.label}</Text>
+                    <Text style={[s.sigLevel, { color: lv(sig2.level) }]}>{sig2.level}</Text>
                   </View>
-                  <Text style={s.sigValue}>{sig.value}</Text>
-                  <Text style={s.sigDetail}>{sig.detail}</Text>
+                  <Text style={s.sigValue}>{sig2.value}</Text>
+                  <Text style={s.sigDetail}>{sig2.detail}</Text>
                   <View style={s.sigFoot}>
-                    <Text style={s.sigSource}>source: {sig.source}</Text>
-                    {sig.nearEdge ? <Text style={s.sigEdge}>near threshold</Text> : null}
+                    <Text style={s.sigSource}>source: {sig2.source}</Text>
+                    {sig2.nearEdge ? <Text style={s.sigEdge}>near threshold</Text> : null}
                   </View>
                 </View>
               ))}
@@ -289,7 +281,6 @@ export default function Index() {
           <Text style={[s.status, { color: statusColor, borderColor: statusColor }]}>{res.status}</Text>
           <Text style={s.meta}>INPUT TYPE: {res.kind}</Text>
           {res.note ? <Text style={[s.note, { color: statusColor }]}>{res.note}</Text> : null}
-
           {res.candidates.map((c, i) => (
             <View key={i} style={s.card}>
               <Text style={s.sym}>{c.symbol ? '$' + c.symbol : 'UNKNOWN SYMBOL'}</Text>
@@ -304,6 +295,14 @@ export default function Index() {
           ))}
         </View>
       ) : null}
+
+      <View style={s.jRow}>
+        <Text style={s.jText}>JOURNAL {jStats.total} obs · {jStats.resolved} resolved</Text>
+        <Pressable onPress={async () => setJText(await exportJournal())}>
+          <Text style={s.jExport}>EXPORT</Text>
+        </Pressable>
+      </View>
+      {jText ? <Text selectable style={s.jDump}>{jText}</Text> : null}
     </ScrollView>
   );
 }
@@ -311,32 +310,15 @@ export default function Index() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0a0a0a' },
   brand: { color: '#e5e7eb', fontSize: 22, letterSpacing: 6, fontWeight: '700' },
-  payRow: { flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },
-  payBtn: { borderWidth: 1, borderColor: '#262626', paddingVertical: 7, paddingHorizontal: 14 },
-  payBtnOn: { borderColor: '#22c55e' },
-  payBtnText: { color: '#4b5563', fontSize: 11, fontWeight: '700' },
-  payBtnTextOn: { color: '#22c55e' },
-  swapBtn: { backgroundColor: '#22c55e', paddingVertical: 14, marginTop: 16, alignItems: 'center' },
-  swapBtnText: { color: '#0a0a0a', fontSize: 13, letterSpacing: 2, fontWeight: '700' },
-  sigOk: { color: '#22c55e', fontSize: 11, marginTop: 10 },
-  swapBox: { borderWidth: 1, borderColor: '#22c55e', padding: 14, marginTop: 20 },
-  swapHead: { color: '#22c55e', fontSize: 11, letterSpacing: 2, fontWeight: '700', marginBottom: 12 },
-  swapLabel: { color: '#4b5563', fontSize: 9, letterSpacing: 1 },
-  swapInput: { borderWidth: 1, borderColor: '#262626', color: '#e5e7eb', padding: 10, fontSize: 18, marginTop: 4 },
-  swapOut: { color: '#22c55e', fontSize: 20, fontWeight: '700', marginTop: 4 },
-  quoteBtn: { borderWidth: 1, borderColor: '#22c55e', paddingVertical: 10, marginTop: 10, alignItems: 'center' },
-  quoteBtnText: { color: '#22c55e', fontSize: 11, letterSpacing: 2, fontWeight: '700' },
-  qRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  qKey: { color: '#6b7280', fontSize: 11 },
-  qVal: { color: '#d1d5db', fontSize: 11 },
+  tag: { color: '#4b5563', fontSize: 11, marginTop: 6, marginBottom: 16 },
   wallet: { borderWidth: 1, borderColor: '#525252', paddingVertical: 8, paddingHorizontal: 12, alignSelf: 'flex-start', marginBottom: 20 },
   walletText: { color: '#a3a3a3', fontSize: 10, letterSpacing: 1, fontWeight: '700' },
-  tag: { color: '#4b5563', fontSize: 11, marginTop: 6, marginBottom: 24 },
   input: { borderWidth: 1, borderColor: '#262626', color: '#e5e7eb', padding: 12, minHeight: 90, fontSize: 13, textAlignVertical: 'top' },
   btn: { borderWidth: 1, borderColor: '#22c55e', paddingVertical: 12, marginTop: 12, alignItems: 'center' },
   btnText: { color: '#22c55e', letterSpacing: 2, fontSize: 12, fontWeight: '700' },
   tokenLine: { color: '#e5e7eb', fontSize: 20, fontWeight: '700' },
   tokenName: { color: '#6b7280', fontSize: 12, marginTop: 2 },
+  youngNote: { color: '#fbbf24', fontSize: 10, marginTop: 10, lineHeight: 15 },
   snapGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 14, borderWidth: 1, borderColor: '#262626' },
   snapCell: { width: '33.33%', padding: 10 },
   snapLabel: { color: '#4b5563', fontSize: 9, letterSpacing: 1 },
@@ -355,7 +337,7 @@ const s = StyleSheet.create({
   status: { alignSelf: 'flex-start', borderWidth: 1, paddingVertical: 6, paddingHorizontal: 12, fontSize: 12, letterSpacing: 2, fontWeight: '700' },
   meta: { color: '#6b7280', fontSize: 10, letterSpacing: 1, marginTop: 10 },
   note: { fontSize: 12, marginTop: 8 },
-  evErr: { color: '#ef4444', fontSize: 12, marginTop: 20 },
+  evErr: { color: '#ef4444', fontSize: 12, marginTop: 12 },
   footNote: { color: '#374151', fontSize: 9, marginTop: 12 },
   reading: { color: '#9ca3af', fontSize: 11, marginTop: 6, fontStyle: 'italic' },
   expBtn: { borderWidth: 1, borderColor: '#8b5cf6', paddingVertical: 10, marginTop: 16, alignItems: 'center' },
@@ -364,6 +346,24 @@ const s = StyleSheet.create({
   paraTitle: { color: '#e5e7eb', fontSize: 13, fontWeight: '700' },
   paraFact: { color: '#6b7280', fontSize: 11, marginTop: 3 },
   paraText: { color: '#d1d5db', fontSize: 12, marginTop: 6, lineHeight: 17 },
+  swapBox: { borderWidth: 1, borderColor: '#22c55e', padding: 14, marginTop: 20 },
+  swapHead: { color: '#22c55e', fontSize: 11, letterSpacing: 2, fontWeight: '700', marginBottom: 12 },
+  swapLabel: { color: '#4b5563', fontSize: 9, letterSpacing: 1 },
+  swapInput: { borderWidth: 1, borderColor: '#262626', color: '#e5e7eb', padding: 10, fontSize: 18, marginTop: 4 },
+  swapOut: { color: '#22c55e', fontSize: 20, fontWeight: '700', marginTop: 4 },
+  quoteBtn: { borderWidth: 1, borderColor: '#22c55e', paddingVertical: 10, marginTop: 10, alignItems: 'center' },
+  quoteBtnText: { color: '#22c55e', fontSize: 11, letterSpacing: 2, fontWeight: '700' },
+  qRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  qKey: { color: '#6b7280', fontSize: 11 },
+  qVal: { color: '#d1d5db', fontSize: 11 },
+  payRow: { flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },
+  payBtn: { borderWidth: 1, borderColor: '#262626', paddingVertical: 7, paddingHorizontal: 14 },
+  payBtnOn: { borderColor: '#22c55e' },
+  payBtnText: { color: '#4b5563', fontSize: 11, fontWeight: '700' },
+  payBtnTextOn: { color: '#22c55e' },
+  swapBtn: { backgroundColor: '#22c55e', paddingVertical: 14, marginTop: 16, alignItems: 'center' },
+  swapBtnText: { color: '#0a0a0a', fontSize: 13, letterSpacing: 2, fontWeight: '700' },
+  sigOk: { color: '#22c55e', fontSize: 11, marginTop: 10 },
   card: { borderWidth: 1, borderColor: '#262626', padding: 12, marginTop: 12 },
   sym: { color: '#e5e7eb', fontSize: 16, fontWeight: '700' },
   badge: { color: '#22c55e', fontSize: 10, letterSpacing: 1, marginTop: 4 },
@@ -382,9 +382,8 @@ const s = StyleSheet.create({
   sigFoot: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
   sigSource: { color: '#374151', fontSize: 9 },
   sigEdge: { color: '#78716c', fontSize: 9 },
+  jRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 30, borderTopWidth: 1, borderTopColor: '#1f1f1f', paddingTop: 10 },
+  jText: { color: '#374151', fontSize: 9, letterSpacing: 1 },
+  jExport: { color: '#6b7280', fontSize: 9, letterSpacing: 1 },
+  jDump: { color: '#6b7280', fontSize: 8, marginTop: 10 },
 });
-
-
-
-
-
