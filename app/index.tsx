@@ -50,6 +50,7 @@ export default function Index() {
   const [sBusy, setSBusy] = useState(false);
   const [sig, setSig] = useState<string | null>(null);
   const [sErr, setSErr] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -97,7 +98,7 @@ export default function Index() {
 
   async function analyze(mint: string) {
     setEvBusy(true); setEv(null); setAct(null); setEvErr(null); setOpenExp(false);
-    setQuote(null); setSig(null); setSErr(null);
+    setQuote(null); setSig(null); setSErr(null); setConfirming(false);
     const [e, a] = await Promise.all([getEvidence(mint), getActivity(mint)]);
     if (!e && !a) setEvErr('No market data available for this token.');
     setEv(e); setAct(a); setEvBusy(false);
@@ -249,13 +250,39 @@ export default function Index() {
                     <View style={s.qRow}><Text style={s.qKey}>Price impact</Text><Text style={s.qVal}>{(quote.priceImpactPct * 100).toFixed(3)}%</Text></View>
                     <View style={s.qRow}><Text style={s.qKey}>Max slippage</Text><Text style={s.qVal}>{(quote.slippageBps / 100).toFixed(2)}%</Text></View>
                     <View style={s.qRow}><Text style={s.qKey}>Alpha fee{quote.feeBps ? ' (' + quote.feeBps + ' bps)' : ''}</Text><Text style={s.qVal}>{quote.feeBps ? fmtAmount(quote.feeUi) + ' ' + quote.feeSymbol : 'none'}</Text></View>
-                    {account ? (
-                      <Pressable style={s.swapBtn} onPress={doSwap} disabled={sBusy}>
-                        <Text style={s.swapBtnText}>{sBusy ? 'SIGNING...' : 'SWAP'}</Text>
-                      </Pressable>
+                    {account ? (confirming ? (
+                      <View style={s.confirmBox}>
+                        <Text style={s.confirmHead}>BEFORE YOU SIGN</Text>
+                        <Text style={s.confirmBuy}>You are buying {fmtAmount(quote.outUi)} {quote.outSymbol ?? ''}</Text>
+                        <Text style={s.confirmPay}>for {payAmt} {pay.symbol}</Text>
+                        <Text style={s.confirmSub}>CURRENT ACTIVITY</Text>
+                        {act.metrics.map(m => (
+                          <View key={m.key} style={s.confirmRow}>
+                            <Text style={s.confirmKey}>{m.label}</Text>
+                            <Text style={[s.confirmVal, { color: av(m.level) }]}>{m.level}</Text>
+                          </View>
+                        ))}
+                        {ev ? (
+                          <View style={s.confirmRow}>
+                            <Text style={s.confirmKey}>Token profile</Text>
+                            <Text style={[s.confirmVal, { color: riskColor(ev.risk) }]}>{ev.risk === 'INSUFFICIENT_EVIDENCE' ? 'INSUFFICIENT' : ev.risk}</Text>
+                          </View>
+                        ) : null}
+                        <Pressable style={s.swapBtn} onPress={doSwap} disabled={sBusy}>
+                          <Text style={s.swapBtnText}>{sBusy ? 'SIGNING...' : 'CONTINUE TO WALLET'}</Text>
+                        </Pressable>
+                        <Pressable onPress={() => setConfirming(false)}>
+                          <Text style={s.cancelText}>CANCEL</Text>
+                        </Pressable>
+                      </View>
                     ) : (
+                      <Pressable style={s.swapBtn} onPress={() => setConfirming(true)}>
+                        <Text style={s.swapBtnText}>SWAP</Text>
+                      </Pressable>
+                    )) : (
                       <Text style={s.footNote}>Connect a wallet to swap.</Text>
                     )}
+
                     {sErr ? <Text style={s.evErr}>{sErr}</Text> : null}
                     {sig ? <Text style={s.sigOk}>Sent: {sig.slice(0, 20)}...</Text> : null}
                     <Text style={s.footNote}>Fee values come directly from the Jupiter quote.</Text>
@@ -382,6 +409,15 @@ const s = StyleSheet.create({
   payBtnTextOn: { color: '#22c55e' },
   swapBtn: { backgroundColor: '#22c55e', paddingVertical: 14, marginTop: 16, alignItems: 'center' },
   swapBtnText: { color: '#0a0a0a', fontSize: 13, letterSpacing: 2, fontWeight: '700' },
+  confirmBox: { borderWidth: 1, borderColor: '#fbbf24', padding: 14, marginTop: 16 },
+  confirmHead: { color: '#fbbf24', fontSize: 10, letterSpacing: 2, fontWeight: '700' },
+  confirmBuy: { color: '#e5e7eb', fontSize: 15, fontWeight: '700', marginTop: 10 },
+  confirmPay: { color: '#9ca3af', fontSize: 12, marginTop: 2 },
+  confirmSub: { color: '#4b5563', fontSize: 9, letterSpacing: 1, marginTop: 14, marginBottom: 6 },
+  confirmRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  confirmKey: { color: '#9ca3af', fontSize: 11 },
+  confirmVal: { fontSize: 11, fontWeight: '700' },
+  cancelText: { color: '#6b7280', fontSize: 10, letterSpacing: 1, textAlign: 'center', marginTop: 12 },
   sigOk: { color: '#22c55e', fontSize: 11, marginTop: 10 },
   card: { borderWidth: 1, borderColor: '#262626', padding: 12, marginTop: 12 },
   sym: { color: '#e5e7eb', fontSize: 16, fontWeight: '700' },
@@ -406,4 +442,5 @@ const s = StyleSheet.create({
   jExport: { color: '#6b7280', fontSize: 9, letterSpacing: 1 },
   jDump: { color: '#6b7280', fontSize: 8, marginTop: 10 },
 });
+
 
