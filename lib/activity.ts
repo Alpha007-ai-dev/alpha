@@ -112,6 +112,8 @@ export async function getActivity(mint: string): Promise<Activity | null> {
   };
 
   const NA = 'n/a';
+  const bvol = (w: any, ok: boolean) => (!ok ? NA : Number(w.buyVolume ?? 0) > 0 ? money(w.buyVolume) : '--');
+  const svol = (w: any, ok: boolean) => (!ok ? NA : Number(w.sellVolume ?? 0) > 0 ? money(w.sellVolume) : '--');
   const vol = (w: any, ok: boolean) => {
     if (!ok) return NA;
     const b = Number(w.buyVolume ?? 0) + Number(w.sellVolume ?? 0);
@@ -124,7 +126,8 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     { label: 'Price', m5: pct(m5.priceChange), h1: ch(h1.priceChange, has1h), h6: ch(h6.priceChange, has6h), h24: ch(h24.priceChange, has24h) },
     { label: 'Liquidity', m5: pct(m5.liquidityChange), h1: ch(h1.liquidityChange, has1h), h6: ch(h6.liquidityChange, has6h), h24: ch(h24.liquidityChange, has24h) },
     { label: 'Holders', m5: pct(m5.holderChange), h1: ch(h1.holderChange, has1h), h6: ch(h6.holderChange, has6h), h24: ch(h24.holderChange, has24h) },
-    { label: 'Volume', m5: vol(m5, true), h1: vol(h1, has1h), h6: vol(h6, has6h), h24: vol(h24, has24h) },
+    { label: 'Buy vol', m5: bvol(m5, true), h1: bvol(h1, has1h), h6: bvol(h6, has6h), h24: bvol(h24, has24h) },
+    { label: 'Sell vol', m5: svol(m5, true), h1: svol(h1, has1h), h6: svol(h6, has6h), h24: svol(h24, has24h) },
     { label: 'Buys/Sells', m5: bs(m5, true), h1: bs(h1, has1h), h6: bs(h6, has6h), h24: bs(h24, has24h) },
   ];
 
@@ -203,6 +206,29 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     reading: isNaN(sr) ? '' : sr > 1 ? 'Activity is shifting toward sellers.' : 'Buyers outnumber sellers.',
   });
 
+  // average trade size on each side
+  const bVol = Number(W.buyVolume ?? NaN);
+  const sVol = Number(W.sellVolume ?? NaN);
+  const avgBuy = buys > 0 && !isNaN(bVol) ? bVol / buys : NaN;
+  const avgSell = sells > 0 && !isNaN(sVol) ? sVol / sells : NaN;
+  const sizeRatio = !isNaN(avgBuy) && avgBuy > 0 && !isNaN(avgSell) ? avgSell / avgBuy : NaN;
+  metrics.push({
+    key: 'tradesize',
+    label: 'Average trade size',
+    level: isNaN(sizeRatio) ? 'UNKNOWN' : sizeRatio >= 3 ? 'SHARP' : sizeRatio >= 1.5 ? 'NOTABLE' : 'CALM',
+    value: isNaN(sizeRatio) ? 'unknown' : 'sells ' + sizeRatio.toFixed(1) + 'x buys',
+    fact: isNaN(sizeRatio)
+      ? 'No per-side volume data.'
+      : 'Average buy ' + money(avgBuy) + ' · average sell ' + money(avgSell) + ' (' + WLBL + ').',
+    reading: isNaN(sizeRatio)
+      ? ''
+      : sizeRatio >= 1.5
+      ? 'Sells are larger than buys. Many small buyers, fewer large sellers.'
+      : sizeRatio <= 0.67
+      ? 'Buys are larger than sells.'
+      : 'Buy and sell sizes are broadly balanced.',
+  });
+
   const explanation: Para[] = [];
 
   if (!isNaN(pShort)) {
@@ -255,3 +281,4 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     youngNote,
   };
 }
+
