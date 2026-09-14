@@ -4,6 +4,7 @@ import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
 import { getActivity, Activity } from '../lib/activity';
 import { logObservation, resolveOutcomes, journalStats, exportJournal } from '../lib/journal';
+import { collectCandidates, candidateStats, exportCandidates } from '../lib/candidates';
 import { useMobileWallet } from '@wallet-ui/react-native-kit';
 import { getQuote, Quote, fmtAmount, buildSwapTx, decodeTx, PAY_TOKENS, PayToken } from '../lib/swap';
 
@@ -32,6 +33,7 @@ export default function Index() {
   const [openExp, setOpenExp] = useState(false);
   const [jStats, setJStats] = useState({ total: 0, resolved: 0, complete: 0, pending: 0 });
   const [jText, setJText] = useState<string | null>(null);
+  const [cStats, setCStats] = useState({ total: 0 });
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [nowTick, setNowTick] = useState(Date.now());
 
@@ -57,6 +59,8 @@ export default function Index() {
     (async () => {
       await resolveOutcomes();
       setJStats(await journalStats());
+      await collectCandidates();
+      setCStats(await candidateStats());
     })();
   }, []);
 
@@ -349,7 +353,7 @@ export default function Index() {
       ) : null}
 
       <View style={s.jRow}>
-        <Text style={s.jText}>JOURNAL {jStats.total} obs · {jStats.resolved} tracked · {jStats.complete} at 24h</Text>
+        <Text style={s.jText}>JOURNAL {jStats.total} obs · {jStats.resolved} tracked · {jStats.complete} at 24h · {cStats.total} candidates</Text>
         <Pressable onPress={async () => setJText(await exportJournal())}>
           <Text style={s.jExport}>EXPORT</Text>
         </Pressable>
@@ -455,6 +459,7 @@ const s = StyleSheet.create({
   jExport: { color: '#6b7280', fontSize: 9, letterSpacing: 1 },
   jDump: { color: '#6b7280', fontSize: 8, marginTop: 10 },
 });
+
 
 
 
