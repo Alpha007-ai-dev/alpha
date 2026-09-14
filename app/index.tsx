@@ -32,6 +32,13 @@ export default function Index() {
   const [openExp, setOpenExp] = useState(false);
   const [jStats, setJStats] = useState({ total: 0, resolved: 0, pending: 0 });
   const [jText, setJText] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, []);
 
   const { account, connect, disconnect, signAndSendTransaction } = useMobileWallet();
   const [wBusy, setWBusy] = useState(false);
@@ -94,6 +101,7 @@ export default function Index() {
     const [e, a] = await Promise.all([getEvidence(mint), getActivity(mint)]);
     if (!e && !a) setEvErr('No market data available for this token.');
     setEv(e); setAct(a); setEvBusy(false);
+    setLoadedAt(Date.now());
     if (a) { await logObservation(a); setJStats(await journalStats()); }
   }
 
@@ -150,6 +158,14 @@ export default function Index() {
             <View style={s.snapCell}><Text style={s.snapLabel}>AGE</Text><Text style={s.snapVal}>{act.snapshot.ageMinutes !== undefined && act.snapshot.ageMinutes < 1440 ? act.snapshot.ageMinutes + 'm' : act.snapshot.ageDays !== undefined ? act.snapshot.ageDays + 'd' : '--'}</Text></View>
           </View>
 
+          <View style={s.freshRow}>
+            <Text style={s.freshText}>
+              {loadedAt ? 'UPDATED ' + (Math.floor((nowTick - loadedAt) / 1000) < 10 ? 'JUST NOW' : Math.floor((nowTick - loadedAt) / 1000) < 60 ? Math.floor((nowTick - loadedAt) / 1000) + 'S AGO' : Math.floor((nowTick - loadedAt) / 60000) + 'M AGO') : ''}
+            </Text>
+            <Pressable onPress={() => analyze(act.mint)} disabled={evBusy}>
+              <Text style={s.refreshBtn}>{evBusy ? 'UPDATING...' : 'REFRESH'}</Text>
+            </Pressable>
+          </View>
           {act.youngNote ? <Text style={s.youngNote}>{act.youngNote}</Text> : null}
 
           <View style={s.tabs}>
@@ -318,6 +334,9 @@ const s = StyleSheet.create({
   btnText: { color: '#22c55e', letterSpacing: 2, fontSize: 12, fontWeight: '700' },
   tokenLine: { color: '#e5e7eb', fontSize: 20, fontWeight: '700' },
   tokenName: { color: '#6b7280', fontSize: 12, marginTop: 2 },
+  freshRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
+  freshText: { color: '#4b5563', fontSize: 9, letterSpacing: 1 },
+  refreshBtn: { color: '#3b82f6', fontSize: 10, letterSpacing: 1, fontWeight: '700', borderWidth: 1, borderColor: '#3b82f6', paddingVertical: 5, paddingHorizontal: 12 },
   youngNote: { color: '#fbbf24', fontSize: 10, marginTop: 10, lineHeight: 15 },
   snapGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 14, borderWidth: 1, borderColor: '#262626' },
   snapCell: { width: '33.33%', padding: 10 },
@@ -387,3 +406,4 @@ const s = StyleSheet.create({
   jExport: { color: '#6b7280', fontSize: 9, letterSpacing: 1 },
   jDump: { color: '#6b7280', fontSize: 8, marginTop: 10 },
 });
+
