@@ -30,7 +30,7 @@ export default function Index() {
   const [evErr, setEvErr] = useState<string | null>(null);
   const [tab, setTab] = useState<'live' | 'profile'>('live');
   const [openExp, setOpenExp] = useState(false);
-  const [jStats, setJStats] = useState({ total: 0, resolved: 0, pending: 0 });
+  const [jStats, setJStats] = useState({ total: 0, resolved: 0, complete: 0, pending: 0 });
   const [jText, setJText] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [nowTick, setNowTick] = useState(Date.now());
@@ -349,7 +349,7 @@ export default function Index() {
       ) : null}
 
       <View style={s.jRow}>
-        <Text style={s.jText}>JOURNAL {jStats.total} obs · {jStats.resolved} resolved</Text>
+        <Text style={s.jText}>JOURNAL {jStats.total} obs · {jStats.resolved} tracked · {jStats.complete} at 24h</Text>
         <Pressable onPress={async () => setJText(await exportJournal())}>
           <Text style={s.jExport}>EXPORT</Text>
         </Pressable>
@@ -455,6 +455,7 @@ const s = StyleSheet.create({
   jExport: { color: '#6b7280', fontSize: 9, letterSpacing: 1 },
   jDump: { color: '#6b7280', fontSize: 8, marginTop: 10 },
 });
+
 
 
 

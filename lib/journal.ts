@@ -1,8 +1,27 @@
 ﻿import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Activity } from './activity';
 
-const KEY = 'alpha_journal_v1';
+const KEY = 'alpha_journal_v2';
 const MAX = 500;
+
+export const HORIZONS = [
+  { key: '1h', ms: 3600000 },
+  { key: '6h', ms: 21600000 },
+  { key: '24h', ms: 86400000 },
+];
+
+export type Outcome = {
+  horizon: string;
+  t: number;
+  ageMs: number;
+  price?: number;
+  liquidity?: number;
+  holders?: number;
+  mcap?: number;
+  priceChangePct?: number;
+  liquidityChangePct?: number;
+  holdersChangePct?: number;
+};
 
 export type Observation = {
   id: string;
@@ -17,15 +36,7 @@ export type Observation = {
   ageMinutes?: number;
   states: Record<string, string>;
   values: Record<string, string>;
-  outcome?: {
-    t: number;
-    price?: number;
-    liquidity?: number;
-    holders?: number;
-    priceChangePct?: number;
-    liquidityChangePct?: number;
-    holdersChangePct?: number;
-  };
+  outcomes: Outcome[];
 };
 
 async function readAll(): Promise<Observation[]> {
@@ -43,6 +54,8 @@ async function writeAll(list: Observation[]) {
   } catch {}
 }
 
+const numOrU = (v: any) => (isFinite(Number(v)) ? Number(v) : undefined);
+
 export async function logObservation(act: Activity) {
   try {
     const states: Record<string, string> = {};
@@ -51,25 +64,25 @@ export async function logObservation(act: Activity) {
       states[m.key] = m.level;
       values[m.key] = m.value;
     }
-    const obs: Observation = {
+    const list = await readAll();
+    const recent = list.find(o => o.mint === act.mint && Date.now() - o.t < 600000);
+    if (recent) return;
+
+    list.push({
       id: act.mint + '_' + Date.now(),
       t: Date.now(),
       mint: act.mint,
       symbol: act.symbol,
       window: act.windows[act.windows.length - 1] ?? '5M',
-      price: isFinite(Number(act.snapshot.price)) ? Number(act.snapshot.price) : undefined,
-      liquidity: isFinite(Number(act.snapshot.liquidity)) ? Number(act.snapshot.liquidity) : undefined,
-      holders: isFinite(Number(act.snapshot.holders)) ? Number(act.snapshot.holders) : undefined,
-      mcap: isFinite(Number(act.snapshot.mcap)) ? Number(act.snapshot.mcap) : undefined,
+      price: numOrU(act.snapshot.price),
+      liquidity: numOrU(act.snapshot.liquidity),
+      holders: numOrU(act.snapshot.holders),
+      mcap: numOrU(act.snapshot.mcap),
       ageMinutes: act.snapshot.ageMinutes,
       states,
       values,
-    };
-    const list = await readAll();
-    // avoid duplicate entries within 10 minutes for the same mint
-    const recent = list.find(o => o.mint === act.mint && Date.now() - o.t < 600000);
-    if (recent) return;
-    list.push(obs);
+      outcomes: [],
+    });
     await writeAll(list);
   } catch {}
 }
@@ -77,9 +90,15 @@ export async function logObservation(act: Activity) {
 const pctChange = (a?: number, b?: number) =>
   a !== undefined && b !== undefined && a > 0 ? ((b - a) / a) * 100 : undefined;
 
-export async function resolveOutcomes(minAgeMs = 3600000): Promise<number> {
+function dueHorizons(o: Observation): string[] {
+  const age = Date.now() - o.t;
+  const have = new Set(o.outcomes.map(x => x.horizon));
+  return HORIZONS.filter(h => age >= h.ms && !have.has(h.key)).map(h => h.key);
+}
+
+export async function resolveOutcomes(): Promise<number> {
   const list = await readAll();
-  const pending = list.filter(o => !o.outcome && Date.now() - o.t >= minAgeMs);
+  const pending = list.filter(o => dueHorizons(o).length > 0);
   if (!pending.length) return 0;
 
   const mints = [...new Set(pending.map(o => o.mint))].slice(0, 12);
@@ -92,21 +111,28 @@ export async function resolveOutcomes(minAgeMs = 3600000): Promise<number> {
       const tok = (Array.isArray(arr) ? arr : arr?.tokens ?? []).find((t: any) => (t.id ?? t.address) === mint);
       if (!tok) continue;
 
-      const price = Number(tok.usdPrice ?? NaN);
-      const liquidity = Number(tok.liquidity ?? NaN);
-      const holders = Number(tok.holderCount ?? NaN);
+      const price = numOrU(tok.usdPrice);
+      const liquidity = numOrU(tok.liquidity);
+      const holders = numOrU(tok.holderCount);
+      const mcap = numOrU(tok.mcap);
+      const now = Date.now();
 
       for (const o of pending.filter(x => x.mint === mint)) {
-        o.outcome = {
-          t: Date.now(),
-          price: isFinite(price) ? price : undefined,
-          liquidity: isFinite(liquidity) ? liquidity : undefined,
-          holders: isFinite(holders) ? holders : undefined,
-          priceChangePct: pctChange(o.price, isFinite(price) ? price : undefined),
-          liquidityChangePct: pctChange(o.liquidity, isFinite(liquidity) ? liquidity : undefined),
-          holdersChangePct: pctChange(o.holders, isFinite(holders) ? holders : undefined),
-        };
-        done++;
+        for (const h of dueHorizons(o)) {
+          o.outcomes.push({
+            horizon: h,
+            t: now,
+            ageMs: now - o.t,
+            price,
+            liquidity,
+            holders,
+            mcap,
+            priceChangePct: pctChange(o.price, price),
+            liquidityChangePct: pctChange(o.liquidity, liquidity),
+            holdersChangePct: pctChange(o.holders, holders),
+          });
+          done++;
+        }
       }
     } catch {}
   }
@@ -117,34 +143,47 @@ export async function resolveOutcomes(minAgeMs = 3600000): Promise<number> {
 
 export async function journalStats() {
   const list = await readAll();
-  const withOutcome = list.filter(o => o.outcome);
-  return { total: list.length, resolved: withOutcome.length, pending: list.length - withOutcome.length };
+  const resolved = list.filter(o => o.outcomes.length > 0).length;
+  const complete = list.filter(o => o.outcomes.some(x => x.horizon === '24h')).length;
+  return { total: list.length, resolved, complete, pending: list.length - resolved };
 }
 
 export async function exportJournal(): Promise<string> {
   const list = await readAll();
-  const head = 't,mint,symbol,ageMinutes,price,liquidity,holders,liquidity_trend,reversal,organic_participation,pressure,outcome_t,outcome_price,outcome_liquidity,priceChangePct,liquidityChangePct,holdersChangePct';
-  const rows = list.map(o =>
-    [
-      new Date(o.t).toISOString(),
-      o.mint,
-      o.symbol ?? '',
-      o.ageMinutes ?? '',
-      o.price ?? '',
-      o.liquidity ?? '',
-      o.holders ?? '',
-      o.states.liquidity_trend ?? '',
-      o.states.reversal ?? '',
-      o.states.organic_participation ?? '',
-      o.states.pressure ?? '',
-      o.outcome ? new Date(o.outcome.t).toISOString() : '',
-      o.outcome?.price ?? '',
-      o.outcome?.liquidity ?? '',
-      o.outcome?.priceChangePct?.toFixed(2) ?? '',
-      o.outcome?.liquidityChangePct?.toFixed(2) ?? '',
-      o.outcome?.holdersChangePct?.toFixed(2) ?? '',
-    ].join(',')
-  );
+  const head = [
+    'obs_t', 'mint', 'symbol', 'age_min',
+    't0_price', 't0_liquidity', 't0_holders', 't0_mcap',
+    'liquidity_trend', 'reversal', 'organic_participation', 'pressure', 'tradesize',
+    'horizon', 'out_t', 'out_age_h', 'out_price', 'out_liquidity', 'out_holders',
+    'price_chg_pct', 'liq_chg_pct', 'holders_chg_pct',
+  ].join(',');
+
+  const rows: string[] = [];
+  for (const o of list) {
+    const base = [
+      new Date(o.t).toISOString(), o.mint, o.symbol ?? '', o.ageMinutes ?? '',
+      o.price ?? '', o.liquidity ?? '', o.holders ?? '', o.mcap ?? '',
+      o.states.liquidity_trend ?? '', o.states.reversal ?? '',
+      o.states.organic_participation ?? '', o.states.pressure ?? '', o.states.tradesize ?? '',
+    ];
+    if (!o.outcomes.length) {
+      rows.push(base.concat(['', '', '', '', '', '', '', '', '']).join(','));
+    } else {
+      for (const x of o.outcomes) {
+        rows.push(base.concat([
+          x.horizon,
+          new Date(x.t).toISOString(),
+          (x.ageMs / 3600000).toFixed(1),
+          String(x.price ?? ''),
+          String(x.liquidity ?? ''),
+          String(x.holders ?? ''),
+          x.priceChangePct?.toFixed(2) ?? '',
+          x.liquidityChangePct?.toFixed(2) ?? '',
+          x.holdersChangePct?.toFixed(2) ?? '',
+        ]).join(','));
+      }
+    }
+  }
   return [head, ...rows].join('\n');
 }
 
