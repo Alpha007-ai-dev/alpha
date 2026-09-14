@@ -16,10 +16,10 @@ export type Snapshot = {
   liquidity?: number;
   holders?: number;
   ageDays?: number;
+  ageMinutes?: number;
 };
 
 export type Row = { label: string; m5: string; h1: string; h6: string; h24: string };
-
 export type Para = { title: string; facts: string[]; text: string };
 
 export type Activity = {
@@ -29,10 +29,12 @@ export type Activity = {
   decimals: number;
   snapshot: Snapshot;
   rows: Row[];
+  windows: string[];
   metrics: Metric[];
   explanation: Para[];
   knownCount: number;
   totalCount: number;
+  youngNote?: string;
 };
 
 export const LIQ_DROP_SHARP = -20;
@@ -79,7 +81,25 @@ export async function getActivity(mint: string): Promise<Activity | null> {
   const h24 = tok.stats24h ?? {};
 
   const first = tok.firstPool?.createdAt ?? tok.createdAt;
-  const ageDays = first ? Math.floor((Date.now() - new Date(first).getTime()) / 86400000) : undefined;
+  const ageMs = first ? Date.now() - new Date(first).getTime() : NaN;
+  const ageMinutes = isNaN(ageMs) ? undefined : Math.floor(ageMs / 60000);
+  const ageDays = isNaN(ageMs) ? undefined : Math.floor(ageMs / 86400000);
+
+  // which windows actually have history behind them
+  const am = ageMinutes ?? 99999;
+  const has1h = am >= 60;
+  const has6h = am >= 360;
+  const has24h = am >= 1440;
+  const windows = ['5M'];
+  if (has1h) windows.push('1H');
+  if (has6h) windows.push('6H');
+  if (has24h) windows.push('24H');
+
+  let youngNote: string | undefined;
+  if (!has24h) {
+    const label = am < 60 ? am + ' minutes' : Math.floor(am / 60) + ' hours';
+    youngNote = 'Token is ' + label + ' old. Longer timeframes have no history yet and are hidden.';
+  }
 
   const snapshot: Snapshot = {
     price: Number(tok.usdPrice ?? NaN),
@@ -88,130 +108,134 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     liquidity: Number(tok.liquidity ?? NaN),
     holders: Number(tok.holderCount ?? NaN),
     ageDays,
+    ageMinutes,
   };
 
-  const vol = (w: any) => {
+  const NA = 'n/a';
+  const vol = (w: any, ok: boolean) => {
+    if (!ok) return NA;
     const b = Number(w.buyVolume ?? 0) + Number(w.sellVolume ?? 0);
     return b > 0 ? money(b) : '--';
   };
-  const bs = (w: any) =>
-    w.numBuys !== undefined ? num(w.numBuys) + ' / ' + num(w.numSells) : '--';
+  const bs = (w: any, ok: boolean) => (!ok ? NA : w.numBuys !== undefined ? num(w.numBuys) + ' / ' + num(w.numSells) : '--');
+  const ch = (v: any, ok: boolean) => (ok ? pct(v) : NA);
 
   const rows: Row[] = [
-    { label: 'Price', m5: pct(m5.priceChange), h1: pct(h1.priceChange), h6: pct(h6.priceChange), h24: pct(h24.priceChange) },
-    { label: 'Liquidity', m5: pct(m5.liquidityChange), h1: pct(h1.liquidityChange), h6: pct(h6.liquidityChange), h24: pct(h24.liquidityChange) },
-    { label: 'Holders', m5: pct(m5.holderChange), h1: pct(h1.holderChange), h6: pct(h6.holderChange), h24: pct(h24.holderChange) },
-    { label: 'Volume', m5: vol(m5), h1: vol(h1), h6: vol(h6), h24: vol(h24) },
-    { label: 'Buys/Sells', m5: bs(m5), h1: bs(h1), h6: bs(h6), h24: bs(h24) },
+    { label: 'Price', m5: pct(m5.priceChange), h1: ch(h1.priceChange, has1h), h6: ch(h6.priceChange, has6h), h24: ch(h24.priceChange, has24h) },
+    { label: 'Liquidity', m5: pct(m5.liquidityChange), h1: ch(h1.liquidityChange, has1h), h6: ch(h6.liquidityChange, has6h), h24: ch(h24.liquidityChange, has24h) },
+    { label: 'Holders', m5: pct(m5.holderChange), h1: ch(h1.holderChange, has1h), h6: ch(h6.holderChange, has6h), h24: ch(h24.holderChange, has24h) },
+    { label: 'Volume', m5: vol(m5, true), h1: vol(h1, has1h), h6: vol(h6, has6h), h24: vol(h24, has24h) },
+    { label: 'Buys/Sells', m5: bs(m5, true), h1: bs(h1, has1h), h6: bs(h6, has6h), h24: bs(h24, has24h) },
   ];
+
+  // primary window: the shortest one with real history for trend metrics
+  const W = has1h ? h1 : m5;
+  const WLBL = has1h ? '1h' : '5m';
 
   const metrics: Metric[] = [];
 
-  const lq = Number(h1.liquidityChange ?? NaN);
+  const lq = Number(W.liquidityChange ?? NaN);
   metrics.push({
     key: 'liquidity_trend',
     label: 'Liquidity',
     level: isNaN(lq) ? 'UNKNOWN' : lq <= LIQ_DROP_SHARP ? 'SHARP' : lq <= LIQ_DROP_NOTABLE ? 'NOTABLE' : 'CALM',
-    value: isNaN(lq) ? 'unknown' : pct(lq) + ' / 1h',
-    fact: isNaN(lq) ? 'No 1h liquidity data.' : 'Pool liquidity changed ' + pct(lq) + ' in the last hour.',
+    value: isNaN(lq) ? 'unknown' : pct(lq) + ' / ' + WLBL,
+    fact: isNaN(lq) ? 'No liquidity data.' : 'Pool liquidity changed ' + pct(lq) + ' over the last ' + WLBL + '.',
     reading: isNaN(lq) ? '' : lq < 0 ? 'Liquidity is leaving the pool.' : 'Liquidity is stable or growing.',
   });
 
-  const p1 = Number(h1.priceChange ?? NaN);
-  const p24 = Number(h24.priceChange ?? NaN);
-  const strongRun = !isNaN(p24) && p24 >= STRONG_24H;
+  const pShort = Number(W.priceChange ?? NaN);
+  const pLong = has24h ? Number(h24.priceChange ?? NaN) : NaN;
+  const strongRun = !isNaN(pLong) && pLong >= STRONG_24H;
   metrics.push({
     key: 'reversal',
     label: 'Price reversal',
-    level: isNaN(p1) ? 'UNKNOWN'
-      : strongRun && p1 <= REVERSAL_SHARP ? 'SHARP'
-      : strongRun && p1 <= REVERSAL_NOTABLE ? 'NOTABLE'
-      : p1 <= REVERSAL_SHARP ? 'NOTABLE' : 'CALM',
-    value: isNaN(p1) ? 'unknown' : pct(p1) + ' / 1h',
-    fact: '24h: ' + pct(p24) + '  ·  1h: ' + pct(p1),
-    reading: isNaN(p1) ? '' : strongRun && p1 < 0
-      ? 'Sharp reversal after strong 24h appreciation.'
-      : p1 < 0 ? 'Price is declining over the last hour.' : 'No reversal in the last hour.',
+    level: isNaN(pShort) ? 'UNKNOWN'
+      : strongRun && pShort <= REVERSAL_SHARP ? 'SHARP'
+      : strongRun && pShort <= REVERSAL_NOTABLE ? 'NOTABLE'
+      : pShort <= REVERSAL_SHARP ? 'NOTABLE' : 'CALM',
+    value: isNaN(pShort) ? 'unknown' : pct(pShort) + ' / ' + WLBL,
+    fact: (has24h ? '24h: ' + pct(pLong) + '  ·  ' : '') + WLBL + ': ' + pct(pShort),
+    reading: isNaN(pShort) ? ''
+      : strongRun && pShort < 0 ? 'Sharp reversal after strong 24h appreciation.'
+      : !has24h ? 'No longer-term history to compare against yet.'
+      : pShort < 0 ? 'Price is declining.' : 'No reversal in this window.',
   });
 
-  const traders = Number(h24.numTraders ?? NaN);
-  const organic = Number(h24.numOrganicBuyers ?? NaN);
-  const ratio = traders > 0 ? (organic / traders) * 100 : NaN;
+  // organic participation: traders if available, else volume share
+  const traders = Number(W.numTraders ?? NaN);
+  const organicBuyers = Number(W.numOrganicBuyers ?? NaN);
+  const buyVol = Number(W.buyVolume ?? NaN);
+  const orgVol = Number(W.buyOrganicVolume ?? NaN);
+
+  let ratio = NaN;
+  let oFact = 'No participation data.';
+  if (traders > 0 && !isNaN(organicBuyers)) {
+    ratio = (organicBuyers / traders) * 100;
+    oFact = num(organicBuyers) + ' organic buyers out of ' + num(traders) + ' traders (' + WLBL + ').';
+  } else if (buyVol > 0 && !isNaN(orgVol)) {
+    ratio = (orgVol / buyVol) * 100;
+    oFact = money(orgVol) + ' organic of ' + money(buyVol) + ' buy volume (' + WLBL + ').';
+  }
+
   metrics.push({
     key: 'organic_participation',
     label: 'Organic participation',
     level: isNaN(ratio) ? 'UNKNOWN' : ratio <= ORGANIC_SHARP ? 'SHARP' : ratio <= ORGANIC_NOTABLE ? 'NOTABLE' : 'CALM',
-    value: isNaN(ratio) ? 'unknown' : ratio.toFixed(1) + '%',
-    fact: isNaN(ratio) ? 'No trader breakdown.' : num(organic) + ' organic buyers out of ' + num(traders) + ' traders (24h).',
+    value: isNaN(ratio) ? 'unknown' : (ratio < 0.1 ? ratio.toFixed(3) : ratio.toFixed(1)) + '%',
+    fact: oFact,
     reading: isNaN(ratio) ? '' : ratio <= ORGANIC_NOTABLE
       ? 'Most trading activity is not coming from organic buyers.'
       : 'A meaningful share of activity comes from organic buyers.',
   });
 
-  const buys = Number(h1.numBuys ?? NaN);
-  const sells = Number(h1.numSells ?? NaN);
+  const buys = Number(W.numBuys ?? NaN);
+  const sells = Number(W.numSells ?? NaN);
   const sr = buys > 0 ? sells / buys : NaN;
+  const perWallet = traders > 0 && !isNaN(buys) && !isNaN(sells) ? (buys + sells) / traders : NaN;
   metrics.push({
     key: 'pressure',
     label: 'Buy / sell pressure',
     level: isNaN(sr) ? 'UNKNOWN' : sr >= SELL_RATIO_SHARP ? 'SHARP' : sr >= SELL_RATIO_NOTABLE ? 'NOTABLE' : 'CALM',
     value: isNaN(sr) ? 'unknown' : num(sells) + ' sells / ' + num(buys) + ' buys',
-    fact: isNaN(sr) ? 'No 1h trade counts.' : 'Over the last hour there were ' + num(sells) + ' sells and ' + num(buys) + ' buys.',
+    fact: (isNaN(sr) ? 'No trade counts.' : 'Over the last ' + WLBL + ': ' + num(sells) + ' sells, ' + num(buys) + ' buys.')
+      + (isNaN(perWallet) ? '' : '  ' + perWallet.toFixed(1) + ' trades per wallet.'),
     reading: isNaN(sr) ? '' : sr > 1 ? 'Activity is shifting toward sellers.' : 'Buyers outnumber sellers.',
   });
 
-  // --- deterministic explanation ---
   const explanation: Para[] = [];
 
-  if (!isNaN(p1) || !isNaN(p24)) {
+  if (!isNaN(pShort)) {
     explanation.push({
       title: 'Momentum',
-      facts: ['24h price: ' + pct(p24), '1h price: ' + pct(p1)],
-      text: strongRun && p1 <= REVERSAL_NOTABLE
-        ? 'The token has moved dramatically higher over 24h, but the most recent hour shows a sharp reversal.'
-        : strongRun
-        ? 'The token has appreciated strongly over 24h and short-term momentum has not reversed.'
-        : p1 < 0
-        ? 'Price is declining over the last hour.'
-        : 'Price is holding or rising over the last hour.',
+      facts: (has24h ? ['24h price: ' + pct(pLong)] : []).concat([WLBL + ' price: ' + pct(pShort)]),
+      text: strongRun && pShort <= REVERSAL_NOTABLE
+        ? 'The token has moved dramatically higher over 24h, but the most recent window shows a sharp reversal.'
+        : !has24h
+        ? 'The token is too young for longer-term comparison. Only short-term movement is available.'
+        : pShort < 0 ? 'Price is declining in the most recent window.' : 'Price is holding or rising.',
     });
   }
 
   if (!isNaN(lq)) {
     explanation.push({
       title: 'Liquidity',
-      facts: ['1h liquidity: ' + pct(lq), 'current liquidity: ' + money(snapshot.liquidity)],
+      facts: [WLBL + ' liquidity: ' + pct(lq), 'current liquidity: ' + money(snapshot.liquidity)],
       text: lq <= LIQ_DROP_SHARP
         ? 'Liquidity is being withdrawn from the pool while the price moves.'
-        : lq < 0
-        ? 'Liquidity is declining alongside the price move.'
-        : 'Liquidity is stable or increasing.',
+        : lq < 0 ? 'Liquidity is declining alongside the price move.' : 'Liquidity is stable or increasing.',
     });
   }
 
   if (!isNaN(ratio)) {
     explanation.push({
       title: 'Participation',
-      facts: ['organic buyers: ' + ratio.toFixed(1) + '%', num(organic) + ' of ' + num(traders) + ' traders (24h)'],
+      facts: [oFact],
       text: ratio <= ORGANIC_SHARP
         ? 'Almost none of the trading activity is classified as organic.'
         : ratio <= ORGANIC_NOTABLE
-        ? 'Only a small share of traders are classified as organic buyers.'
-        : 'A meaningful share of traders are classified as organic buyers.',
-    });
-  }
-
-  const p5 = Number(m5.priceChange ?? NaN);
-  const v5 = Number(m5.volumeChange ?? NaN);
-  if (!isNaN(p5) && !isNaN(v5)) {
-    explanation.push({
-      title: 'Last 5 minutes',
-      facts: ['5m price: ' + pct(p5), '5m volume: ' + pct(v5)],
-      text: p5 > 0 && v5 < 0
-        ? 'Price is recovering while trading activity is declining.'
-        : p5 < 0 && v5 > 0
-        ? 'Price is falling on rising activity.'
-        : 'Short-term price and activity are moving in the same direction.',
+        ? 'Only a small share of activity is classified as organic.'
+        : 'A meaningful share of activity is classified as organic.',
     });
   }
 
@@ -223,10 +247,11 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     decimals: Number(tok.decimals ?? 9),
     snapshot,
     rows,
+    windows,
     metrics,
     explanation,
     knownCount: metrics.length - unknown,
     totalCount: metrics.length,
+    youngNote,
   };
 }
-
