@@ -113,6 +113,16 @@ export async function resolve(raw: string): Promise<Result> {
 
   const low = input.toLowerCase();
 
+  const evm = input.match(/\b0x[a-fA-F0-9]{40}\b/);
+  if (evm) {
+    return {
+      status: 'UNVERIFIED',
+      kind: 'evm address',
+      candidates: [],
+      note: 'This is an EVM address (Ethereum, BNB Chain, Base). Alpha only covers Solana.',
+    };
+  }
+
   if (low.includes('dexscreener.com/solana/')) {
     const m = input.match(/dexscreener\.com\/solana\/([1-9A-HJ-NP-Za-km-z]{32,44})/i);
     if (m) {
