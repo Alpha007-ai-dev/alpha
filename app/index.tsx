@@ -51,6 +51,7 @@ export default function Index() {
   const [sig, setSig] = useState<string | null>(null);
   const [sErr, setSErr] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [openEv, setOpenEv] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     (async () => {
@@ -98,7 +99,7 @@ export default function Index() {
 
   async function analyze(mint: string) {
     setEvBusy(true); setEv(null); setAct(null); setEvErr(null); setOpenExp(false);
-    setQuote(null); setSig(null); setSErr(null); setConfirming(false);
+    setQuote(null); setSig(null); setSErr(null); setConfirming(false); setOpenEv({});
     const [e, a] = await Promise.all([getEvidence(mint), getActivity(mint)]);
     if (!e && !a) setEvErr('No market data available for this token.');
     setEv(e); setAct(a); setEvBusy(false);
@@ -204,8 +205,16 @@ export default function Index() {
                     <Text style={[s.sigLevel, { color: av(m.level) }]}>{m.level}</Text>
                   </View>
                   <Text style={[s.sigValue, { color: av(m.level) }]}>{m.value}</Text>
-                  <Text style={s.sigDetail}>{m.fact}</Text>
                   {m.reading ? <Text style={s.reading}>{m.reading}</Text> : null}
+                  <Pressable onPress={() => setOpenEv({ ...openEv, [m.key]: !openEv[m.key] })}>
+                    <Text style={s.evToggle}>{openEv[m.key] ? 'HIDE EVIDENCE' : 'SHOW EVIDENCE'}</Text>
+                  </Pressable>
+                  {openEv[m.key] ? (
+                    <View style={s.evBox}>
+                      <Text style={s.evFact}>{m.fact}</Text>
+                      <Text style={s.evSrc}>source: Jupiter</Text>
+                    </View>
+                  ) : null}
                 </View>
               ))}
 
@@ -409,6 +418,10 @@ const s = StyleSheet.create({
   payBtnTextOn: { color: '#22c55e' },
   swapBtn: { backgroundColor: '#22c55e', paddingVertical: 14, marginTop: 16, alignItems: 'center' },
   swapBtnText: { color: '#0a0a0a', fontSize: 13, letterSpacing: 2, fontWeight: '700' },
+  evToggle: { color: '#3b82f6', fontSize: 9, letterSpacing: 1, fontWeight: '700', marginTop: 10 },
+  evBox: { borderLeftWidth: 2, borderLeftColor: '#3b82f6', paddingLeft: 10, marginTop: 8 },
+  evFact: { color: '#d1d5db', fontSize: 11, lineHeight: 16 },
+  evSrc: { color: '#374151', fontSize: 9, marginTop: 4 },
   confirmBox: { borderWidth: 1, borderColor: '#fbbf24', padding: 14, marginTop: 16 },
   confirmHead: { color: '#fbbf24', fontSize: 10, letterSpacing: 2, fontWeight: '700' },
   confirmBuy: { color: '#e5e7eb', fontSize: 15, fontWeight: '700', marginTop: 10 },
@@ -442,5 +455,6 @@ const s = StyleSheet.create({
   jExport: { color: '#6b7280', fontSize: 9, letterSpacing: 1 },
   jDump: { color: '#6b7280', fontSize: 8, marginTop: 10 },
 });
+
 
 
