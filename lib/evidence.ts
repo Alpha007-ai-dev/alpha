@@ -125,6 +125,27 @@ export async function getEvidence(mint: string): Promise<Evidence | null> {
     source: 'Jupiter audit',
   });
 
+  // 3b. Deployer track record
+  const devMig = Number(a.devMigrations ?? NaN);
+  const migRate = !isNaN(devMints) && devMints > 0 && !isNaN(devMig) ? (devMig / devMints) * 100 : NaN;
+  signals.push({
+    key: 'deployer',
+    label: 'Deployer track record',
+    level: isNaN(migRate) ? 'UNKNOWN'
+      : devMints < 3 ? 'LOW'
+      : migRate < 15 ? 'HIGH'
+      : migRate < 40 ? 'MEDIUM' : 'LOW',
+    value: isNaN(migRate)
+      ? 'unknown'
+      : devMig + ' of ' + devMints + ' launches migrated (' + migRate.toFixed(0) + '%)',
+    detail: isNaN(migRate)
+      ? 'No launch history available for this deployer.'
+      : devMints < 3
+      ? 'This deployer has launched very few tokens, so there is little history to read.'
+      : 'Migration means a launch reached a real market instead of being abandoned. A low rate across many launches shows a high-volume launcher.',
+    source: 'Jupiter audit',
+  });
+
   // 4. Liquidity
   signals.push({
     key: 'liquidity',
