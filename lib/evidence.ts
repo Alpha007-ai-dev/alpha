@@ -89,6 +89,10 @@ export async function getEvidence(mint: string): Promise<Evidence | null> {
     });
   }
 
+  const firstPoolAt = tok.firstPool?.createdAt ?? tok.createdAt;
+  const ageDaysForCtx = firstPoolAt ? (Date.now() - new Date(firstPoolAt).getTime()) / 86400000 : 0;
+  const mature = ageDaysForCtx >= 180;
+
   // 2. Holder concentration
   const top = Number(a.topHoldersPercentage ?? NaN);
   signals.push({
@@ -96,7 +100,11 @@ export async function getEvidence(mint: string): Promise<Evidence | null> {
     label: 'Holder concentration',
     level: isNaN(top) ? 'UNKNOWN' : top >= 60 ? 'HIGH' : top >= 35 ? 'MEDIUM' : 'LOW',
     value: isNaN(top) ? 'unknown' : top.toFixed(1) + '% in top holders',
-    detail: 'A few wallets holding most of the supply can exit at any time. Pool and burn addresses may be included.',
+    detail: isNaN(top)
+      ? 'Holder distribution could not be read.'
+      : mature
+      ? 'On established tokens the largest accounts are often exchange custody wallets rather than individual sellers. Check the top holders before reading this as exit risk.'
+      : 'On a young token, concentrated supply means a few wallets can exit at any time. Pool and burn addresses may be included in this figure.',
     source: 'Jupiter audit',
     nearEdge: !isNaN(top) && (Math.abs(top - 60) < 5 || Math.abs(top - 35) < 5),
   });
@@ -174,3 +182,4 @@ export async function getEvidence(mint: string): Promise<Evidence | null> {
 
   return { mint, symbol: tok.symbol, risk, verifiedCount, totalCount: total, highCount: highs, signals };
 }
+
