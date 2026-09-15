@@ -17,6 +17,7 @@ export type Snapshot = {
   holders?: number;
   ageDays?: number;
   ageMinutes?: number;
+  devBalancePct?: number;
 };
 
 export type Row = { label: string; m5: string; h1: string; h6: string; h24: string };
@@ -109,6 +110,7 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     holders: Number(tok.holderCount ?? NaN),
     ageDays,
     ageMinutes,
+    devBalancePct: isFinite(Number(tok.audit?.devBalancePercentage)) ? Number(tok.audit.devBalancePercentage) : undefined,
   };
 
   const NA = 'n/a';
@@ -281,4 +283,5 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     youngNote,
   };
 }
+
 

@@ -18,6 +18,7 @@ export type Outcome = {
   liquidity?: number;
   holders?: number;
   mcap?: number;
+  devBalancePct?: number;
   priceChangePct?: number;
   liquidityChangePct?: number;
   holdersChangePct?: number;
@@ -34,6 +35,7 @@ export type Observation = {
   holders?: number;
   mcap?: number;
   ageMinutes?: number;
+  devBalancePct?: number;
   states: Record<string, string>;
   values: Record<string, string>;
   outcomes: Outcome[];
@@ -79,6 +81,7 @@ export async function logObservation(act: Activity) {
       holders: numOrU(act.snapshot.holders),
       mcap: numOrU(act.snapshot.mcap),
       ageMinutes: act.snapshot.ageMinutes,
+      devBalancePct: act.snapshot.devBalancePct,
       states,
       values,
       outcomes: [],
@@ -115,6 +118,7 @@ export async function resolveOutcomes(): Promise<number> {
       const liquidity = numOrU(tok.liquidity);
       const holders = numOrU(tok.holderCount);
       const mcap = numOrU(tok.mcap);
+      const devBal = numOrU(tok.audit?.devBalancePercentage);
       const now = Date.now();
 
       for (const o of pending.filter(x => x.mint === mint)) {
@@ -127,6 +131,7 @@ export async function resolveOutcomes(): Promise<number> {
             liquidity,
             holders,
             mcap,
+            devBalancePct: devBal,
             priceChangePct: pctChange(o.price, price),
             liquidityChangePct: pctChange(o.liquidity, liquidity),
             holdersChangePct: pctChange(o.holders, holders),
@@ -190,3 +195,4 @@ export async function exportJournal(): Promise<string> {
 export async function clearJournal() {
   try { await AsyncStorage.removeItem(KEY); } catch {}
 }
+
