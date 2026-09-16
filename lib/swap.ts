@@ -1,4 +1,4 @@
-﻿import { getTransactionDecoder } from '@solana/transactions';
+import { getTransactionDecoder } from '@solana/transactions';
 import { getBase64Encoder } from '@solana/codecs-strings';
 
 export const PLATFORM_FEE_BPS = 20;
@@ -56,14 +56,14 @@ export async function getQuote(
     if (!q || q.error || !q.outAmount) return null;
 
     const feeRaw = Number(q.platformFee?.amount ?? 0);
-    const feeUi = feeRaw / Math.pow(10, pay.decimals);
+    const feeUi = feeRaw / Math.pow(10, outDecimals);
 
     return {
       raw: q,
       outUi: Number(q.outAmount) / Math.pow(10, outDecimals),
       feeUi,
       feeBps: Number(q.platformFee?.feeBps ?? 0),
-      feeSymbol: pay.symbol,
+      feeSymbol: outSymbol || 'tokens',
       priceImpactPct: Number(q.priceImpactPct ?? 0),
       slippageBps: Number(q.slippageBps ?? 50),
       contextSlot: Number(q.contextSlot ?? 0),

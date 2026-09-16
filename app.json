@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "kit-expo-minimal",
-    "slug": "kit-expo-minimal",
+    "name": "Alpha",
+    "slug": "alpha",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "expokit",
+    "scheme": "alphaevidence",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
@@ -18,7 +18,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.kit_expo_minimal"
+      "package": "com.alphaevidence.app"
     },
     "web": {
       "output": "static",
