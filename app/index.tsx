@@ -6,7 +6,7 @@ import { getActivity, Activity } from '../lib/activity';
 import { computeMarketState } from '../lib/marketState';
 import { fetchCandles, ChartResult, ChartTf } from '../lib/chart';
 import CandleChart from '../components/CandleChart';
-import { logObservation, resolveOutcomes, journalStats, exportJournal } from '../lib/journal';
+import { logObservation, resolveOutcomes, journalStats, exportJournal, recordDecision } from '../lib/journal';
 import { collectCandidates, candidateStats, exportCandidates } from '../lib/candidates';
 import { useMobileWallet } from '@wallet-ui/react-native-kit';
 import { getQuote, Quote, fmtAmount, buildSwapTx, decodeTx, PAY_TOKENS, PayToken } from '../lib/swap';
@@ -43,6 +43,16 @@ export default function Index() {
   const [chartTf, setChartTf] = useState<ChartTf>('1H');
   const [chart, setChart] = useState<ChartResult | null>(null);
   const [chartBusy, setChartBusy] = useState(false);
+  const [decision, setDecision] = useState<{ mint: string; d: string } | null>(null);
+  const [dBusy, setDBusy] = useState(false);
+  const decide = async (d: 'BUY_DEMO' | 'PASS') => {
+    if (!act) return;
+    setDBusy(true);
+    const r = await recordDecision(act, d);
+    setDecision({ mint: act.mint, d: r });
+    setJStats(await journalStats());
+    setDBusy(false);
+  };
   useEffect(() => {
     if (!act) return;
     let alive = true;
@@ -253,6 +263,27 @@ export default function Index() {
                     <Text style={{ color: '#6b7280', fontSize: 10, marginTop: 8 }}>First match wins. Not financial advice.</Text>
                   </View>
                 ) : null}
+              </View>
+            );
+          })()}
+          {(() => {
+            const dNow = decision && decision.mint === act.mint ? decision.d : null;
+            return (
+              <View style={{ marginTop: 16, padding: 14, borderWidth: 1, borderColor: '#374151', borderRadius: 10 }}>
+                <Text style={s.snapLabel}>YOUR DECISION</Text>
+                {dNow ? (
+                  <Text style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 19, marginTop: 8 }}>{dNow === 'ERROR' ? 'Could not save the decision. Try again.' : 'Saved: ' + (dNow === 'BUY_DEMO' ? 'BUY DEMO' : 'PASS') + '. Alpha measures what happens next at 1h, 6h and 24h.'}</Text>
+                ) : (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                    <Pressable disabled={dBusy} onPress={() => decide('BUY_DEMO')} style={{ flex: 1, height: 48, borderRadius: 8, backgroundColor: '#22c55e', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#052e16', fontWeight: '700', fontSize: 13 }}>BUY DEMO</Text>
+                    </Pressable>
+                    <Pressable disabled={dBusy} onPress={() => decide('PASS')} style={{ flex: 1, height: 48, borderRadius: 8, borderWidth: 1, borderColor: '#4b5563', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#e5e7eb', fontWeight: '700', fontSize: 13 }}>PASS</Text>
+                    </Pressable>
+                  </View>
+                )}
+                <Text style={{ color: '#6b7280', fontSize: 10, marginTop: 8 }}>Demo only. No funds move. Not financial advice.</Text>
               </View>
             );
           })()}

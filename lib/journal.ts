@@ -58,6 +58,8 @@ async function writeAll(list: Observation[]) {
 
 const numOrU = (v: any) => (isFinite(Number(v)) ? Number(v) : undefined);
 
+import { computeMarketState } from './marketState';
+
 export async function logObservation(act: Activity) {
   try {
     const states: Record<string, string> = {};
@@ -82,6 +84,7 @@ export async function logObservation(act: Activity) {
       mcap: numOrU(act.snapshot.mcap),
       ageMinutes: act.snapshot.ageMinutes,
       devBalancePct: act.snapshot.devBalancePct,
+      ...(() => { const ms = computeMarketState(act.rawWindow, act.evidence?.window ?? '1h', !!act.rawWindow, act.metrics); return { marketState: ms.state, ruleVersion: ms.ruleVersion, msWindow: act.evidence?.window }; })(),
       states,
       values,
       outcomes: [],
@@ -190,7 +193,7 @@ export async function exportJournal(): Promise<string> {
     'liquidity_trend', 'reversal', 'organic_participation', 'pressure', 'tradesize',
     'horizon', 'out_t', 'out_age_h', 'out_price', 'out_liquidity', 'out_holders',
     'price_chg_pct', 'liq_chg_pct', 'holders_chg_pct',
-    'outcome', 'no_data_reason', 't0_dev_balance_pct', 'out_dev_balance_pct',
+    'outcome', 'no_data_reason', 't0_dev_balance_pct', 'out_dev_balance_pct', 'market_state', 'rule_version', 'ms_window', 'decision', 'decision_t',
   ].join(',');
 
   const rows: string[] = [];
@@ -202,7 +205,7 @@ export async function exportJournal(): Promise<string> {
       o.states.organic_participation ?? '', o.states.pressure ?? '', o.states.tradesize ?? '',
     ];
     if (!o.outcomes.length) {
-      rows.push(base.concat(['', '', '', '', '', '', '', '', '', '', '', String((o as any).devBalancePct ?? ''), '']).join(','));
+      rows.push(base.concat(['', '', '', '', '', '', '', '', '', '', '', String((o as any).devBalancePct ?? ''), '', String((o as any).marketState ?? ''), String((o as any).ruleVersion ?? ''), String((o as any).msWindow ?? ''), String((o as any).decision ?? ''), (o as any).decisionT ? new Date((o as any).decisionT).toISOString() : '']).join(','));
     } else {
       for (const x of o.outcomes) {
         rows.push(base.concat([
@@ -219,6 +222,11 @@ export async function exportJournal(): Promise<string> {
           String((x as any).noDataReason ?? ''),
           String((o as any).devBalancePct ?? ''),
           String((x as any).devBalancePct ?? ''),
+          String((o as any).marketState ?? ''),
+          String((o as any).ruleVersion ?? ''),
+          String((o as any).msWindow ?? ''),
+          String((o as any).decision ?? ''),
+          (o as any).decisionT ? new Date((o as any).decisionT).toISOString() : '',
         ]).join(','));
       }
     }
@@ -230,3 +238,19 @@ export async function clearJournal() {
   try { await AsyncStorage.removeItem(KEY); } catch {}
 }
 
+export async function recordDecision(act: Activity, decision: 'BUY_DEMO' | 'PASS'): Promise<string> {
+  try {
+    await logObservation(act);
+    const list = await readAll();
+    let latest: any = null;
+    for (const o of list) if (o.mint === act.mint && (!latest || o.t > latest.t)) latest = o;
+    if (!latest) return 'ERROR';
+    if (latest.decision) return latest.decision;
+    latest.decision = decision;
+    latest.decisionT = Date.now();
+    await writeAll(list);
+    return decision;
+  } catch {
+    return 'ERROR';
+  }
+}
