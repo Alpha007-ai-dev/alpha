@@ -1,13 +1,13 @@
-﻿import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Activity } from './activity';
 
 const KEY = 'alpha_journal_v2';
 const MAX = 500;
 
 export const HORIZONS = [
-  { key: '1h', ms: 3600000 },
-  { key: '6h', ms: 21600000 },
-  { key: '24h', ms: 86400000 },
+  { key: '1h', ms: 3600000, min: 2700000, max: 4500000 },
+  { key: '6h', ms: 21600000, min: 18000000, max: 25200000 },
+  { key: '24h', ms: 86400000, min: 79200000, max: 93600000 },
 ];
 
 export type Outcome = {
@@ -93,53 +93,82 @@ export async function logObservation(act: Activity) {
 const pctChange = (a?: number, b?: number) =>
   a !== undefined && b !== undefined && a > 0 ? ((b - a) / a) * 100 : undefined;
 
-function dueHorizons(o: Observation): string[] {
+function dueHorizons(o: Observation): { key: string; missed: boolean }[] {
   const age = Date.now() - o.t;
   const have = new Set(o.outcomes.map(x => x.horizon));
-  return HORIZONS.filter(h => age >= h.ms && !have.has(h.key)).map(h => h.key);
+  return HORIZONS
+    .filter(h => age >= h.min && !have.has(h.key))
+    .map(h => ({ key: h.key, missed: age > h.max }));
 }
+
+// Frozen outcome rule: UP >= +10%, DOWN <= -10%, else STABLE; no price -> NO_DATA
+const classify = (pct?: number): string =>
+  pct === undefined || isNaN(pct) ? 'NO_DATA' : pct >= 10 ? 'UP' : pct <= -10 ? 'DOWN' : 'STABLE';
 
 export async function resolveOutcomes(): Promise<number> {
   const list = await readAll();
   const pending = list.filter(o => dueHorizons(o).length > 0);
   if (!pending.length) return 0;
-
-  const mints = [...new Set(pending.map(o => o.mint))].slice(0, 12);
   let done = 0;
+  const now0 = Date.now();
+
+  // 1) windows already closed: NO_DATA / MISSED_WINDOW, no fetch
+  for (const o of pending) {
+    for (const h of dueHorizons(o).filter(d => d.missed)) {
+      o.outcomes.push({ horizon: h.key, t: now0, ageMs: now0 - o.t, outcome: 'NO_DATA', noDataReason: 'MISSED_WINDOW' } as any);
+      done++;
+    }
+  }
+
+  // 2) windows open now: fetch and record
+  const open = list.filter(o => dueHorizons(o).some(d => !d.missed));
+  const mints = [...new Set(open.map(o => o.mint))].slice(0, 12);
 
   for (const mint of mints) {
+    let tok: any = null;
+    let fetched = false;
     try {
       const r = await fetch('https://lite-api.jup.ag/tokens/v2/search?query=' + mint);
-      const arr = await r.json();
-      const tok = (Array.isArray(arr) ? arr : arr?.tokens ?? []).find((t: any) => (t.id ?? t.address) === mint);
-      if (!tok) continue;
-
-      const price = numOrU(tok.usdPrice);
-      const liquidity = numOrU(tok.liquidity);
-      const holders = numOrU(tok.holderCount);
-      const mcap = numOrU(tok.mcap);
-      const devBal = numOrU(tok.audit?.devBalancePercentage);
-      const now = Date.now();
-
-      for (const o of pending.filter(x => x.mint === mint)) {
-        for (const h of dueHorizons(o)) {
-          o.outcomes.push({
-            horizon: h,
-            t: now,
-            ageMs: now - o.t,
-            price,
-            liquidity,
-            holders,
-            mcap,
-            devBalancePct: devBal,
-            priceChangePct: pctChange(o.price, price),
-            liquidityChangePct: pctChange(o.liquidity, liquidity),
-            holdersChangePct: pctChange(o.holders, holders),
-          });
-          done++;
-        }
+      if (r.ok) {
+        const arr = await r.json();
+        fetched = true;
+        tok = (Array.isArray(arr) ? arr : arr?.tokens ?? []).find((t: any) => (t.id ?? t.address) === mint) ?? null;
       }
     } catch {}
+    if (!fetched) continue; // network error: retry later while the window is open
+
+    const now = Date.now();
+    for (const o of open.filter(x => x.mint === mint)) {
+      for (const h of dueHorizons(o).filter(d => !d.missed)) {
+        if (!tok) {
+          o.outcomes.push({ horizon: h.key, t: now, ageMs: now - o.t, outcome: 'NO_DATA', noDataReason: 'TOKEN_NOT_FOUND' } as any);
+          done++;
+          continue;
+        }
+        const price = numOrU(tok.usdPrice);
+        const liquidity = numOrU(tok.liquidity);
+        const holders = numOrU(tok.holderCount);
+        const mcap = numOrU(tok.mcap);
+        const devBal = numOrU(tok.audit?.devBalancePercentage);
+        const pc = pctChange(o.price, price);
+        o.outcomes.push({
+          horizon: h.key,
+          t: now,
+          ageMs: now - o.t,
+          price,
+          liquidity,
+          holders,
+          mcap,
+          devBalancePct: devBal,
+          priceChangePct: pc,
+          liquidityChangePct: pctChange(o.liquidity, liquidity),
+          holdersChangePct: pctChange(o.holders, holders),
+          outcome: classify(pc),
+          noDataReason: pc === undefined ? 'NO_PRICE' : undefined,
+        } as any);
+        done++;
+      }
+    }
   }
 
   if (done) await writeAll(list);
