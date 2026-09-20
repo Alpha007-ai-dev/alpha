@@ -3,7 +3,7 @@ export type ChartTf = '1H' | '6H' | '24H';
 export type ChartResult = {
   mint: string;
   tf: ChartTf;
-  status: 'OK' | 'NO_POOL' | 'RATE_LIMIT' | 'ERROR';
+  status: 'OK' | 'NO_POOL' | 'RATE_LIMIT' | 'ERROR' | 'MISMATCH';
   candles: Candle[];
   pool?: string;
   dex?: string;
@@ -47,7 +47,7 @@ export async function getPool(mint: string): Promise<{ pool: string | null; dex?
   return { pool, dex, status: pool ? 'OK' : 'NO_POOL' };
 }
 
-export async function fetchCandles(mint: string, tf: ChartTf): Promise<ChartResult> {
+export async function fetchCandles(mint: string, tf: ChartTf, refPrice?: number): Promise<ChartResult> {
   const key = mint + '|' + tf;
   const cc = candleCache[key];
   if (cc && Date.now() - cc.at < CANDLE_TTL) return cc.res;
@@ -64,7 +64,12 @@ export async function fetchCandles(mint: string, tf: ChartTf): Promise<ChartResu
       .map(a => ({ t: Number(a[0]), o: Number(a[1]), h: Number(a[2]), l: Number(a[3]), c: Number(a[4]), v: Number(a[5]) }))
       .filter(k => isFinite(k.o) && isFinite(k.h) && isFinite(k.l) && isFinite(k.c) && k.h > 0)
       .sort((a, b) => a.t - b.t);
-    const res: ChartResult = { mint, tf, status: candles.length ? 'OK' : 'NO_POOL', candles, pool: p.pool, dex: p.dex };
+    let ok = candles.length > 0;
+    if (ok && refPrice && refPrice > 0) {
+      const last = candles[candles.length - 1].c;
+      if (last > 0 && Math.abs(last / refPrice - 1) > 0.15) ok = false;
+    }
+    const res: ChartResult = { mint, tf, status: ok ? 'OK' : candles.length ? 'MISMATCH' : 'NO_POOL', candles, pool: p.pool, dex: p.dex };
     candleCache[key] = { res, at: Date.now() };
     return res;
   } catch {

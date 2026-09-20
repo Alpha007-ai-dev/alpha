@@ -224,15 +224,18 @@ export default function Index() {
                     </Pressable>
                   ))}
                 </View>
-                {cv && cv.status === 'OK' ? (
+                {cv && (cv.status === 'OK' || cv.status === 'MISMATCH') ? (
                   <CandleChart candles={cv.candles} height={180} />
                 ) : chartBusy ? (
                   <View style={{ height: 180, justifyContent: 'center' }}><ActivityIndicator /></View>
                 ) : (
                   <Text style={s.youngNote}>{!cv ? '' : cv.status === 'NO_POOL' ? 'Chart not available for this token yet.' : cv.status === 'RATE_LIMIT' ? 'Chart source is busy. Try REFRESH in a minute.' : 'Chart could not be loaded.'}</Text>
                 )}
-                {cv && cv.status === 'OK' ? (
+                {cv && (cv.status === 'OK' || cv.status === 'MISMATCH') ? (
                   <Text style={{ color: C.sub, fontSize: 10, marginTop: 4 }}>{'Price range ' + chartTf + ' | GeckoTerminal | ' + (cv.dex ?? 'pool') + ' | ' + cv.candles.length + ' candles'}</Text>
+                ) : null}
+                {cv && cv.status === 'MISMATCH' ? (
+                  <Text style={{ color: C.amber, fontSize: 10, marginTop: 4, lineHeight: 15, fontFamily: F.mono }}>{'Chart price ' + fmtMoney(cv.candles[cv.candles.length - 1].c) + ' differs from the price above. Different sources.'}</Text>
                 ) : null}
               </View>
             );
@@ -256,7 +259,7 @@ export default function Index() {
             } else if (sn.launchpad) {
               chips.push({ t: 'Not graduated' });
             }
-            if (sn.devMints === 1) chips.push({ t: 'New creator', on: true });
+            if (sn.devMints === 1) chips.push({ t: (sn.ageMinutes !== undefined && sn.ageMinutes < 1440) ? 'New creator' : 'Single token creator', on: sn.ageMinutes !== undefined && sn.ageMinutes < 1440 });
             else if (sn.devMints > 1) chips.push({ t: sn.devMints + ' tokens by creator' });
             const am = sn.ageMinutes;
             if (am !== undefined) chips.push({ t: am < 60 ? am + ' min old' : am < 1440 ? Math.floor(am / 60) + 'h old' : Math.floor(am / 1440) + 'd old' });
@@ -302,10 +305,10 @@ export default function Index() {
               : fl.creatorTrades.length ? 'Bought in this window.' : 'No trades in this window.';
             return (
               <View style={{ marginTop: 16, padding: 14, borderWidth: 1, borderColor: C.border2, borderRadius: 14, backgroundColor: C.card }}>
-                <Text style={s.snapLabel}>{'RIGHT NOW · ' + fl.windowLabel}</Text>
+                <Text style={s.snapLabel}>{(fl.minutes <= 60 ? 'RIGHT NOW · LAST ' + fl.minutes + ' MIN' : 'RECENT FLOW · LAST ' + (fl.minutes / 60).toFixed(1) + ' H')}</Text>
                 <Text style={{ color: col, fontSize: 24, fontFamily: F.head, marginTop: 6 }}>{fl.label}</Text>
                 <Text style={{ color: C.sub, fontSize: 12, marginTop: 4, fontFamily: F.mono }}>{fl.support}</Text>
-                {row('PACE', fl.trades + ' trades in ' + fl.minutes + ' min.')}
+                {row('PACE', fl.trades + ' trades in ' + (fl.minutes <= 60 ? fl.minutes + ' min.' : (fl.minutes / 60).toFixed(1) + ' hours.'))}
                 {row('WHO', fl.buyWallets + ' wallets bought ' + flowMoney(fl.buyUsd) + ' · ' + fl.sellWallets + ' sold ' + flowMoney(fl.sellUsd) + '. ' + fl.bothWallets + ' did both.')}
                 {row('CREATOR', creatorLine, sold.length ? C.red : C.green)}
                 {fl.repeatAmount || fl.dustPct >= 25 ? (
@@ -331,7 +334,7 @@ export default function Index() {
               : !has ? 'No earlier balance to compare.'
               : Math.abs(delta) < 0.01 ? 'Unchanged since ' + hm(cr.since) + '.'
               : 'Creator wallet balance ' + (delta < 0 ? 'fell' : 'rose') + ' from ' + fp(cr.basePct) + ' to ' + fp(cr.pct) + ' since ' + hm(cr.since) + '.';
-            const deployer = cr.mints === 1 ? 'NEW CREATOR: first token from this wallet.'
+            const deployer = cr.mints === 1 ? (act.snapshot.ageMinutes !== undefined && act.snapshot.ageMinutes < 1440 ? 'NEW CREATOR: first token from this wallet.' : 'This wallet has launched only this token.')
               : cr.newMints && cr.newMints > 0 ? 'Deployer launched ' + cr.newMints + ' new token(s) since ' + hm(cr.since) + '.'
               : cr.mints !== undefined ? 'Deployer has launched ' + cr.mints + ' tokens.' : '';
             return (
