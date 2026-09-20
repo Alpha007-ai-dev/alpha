@@ -55,7 +55,7 @@ export async function fetchCandles(mint: string, tf: ChartTf): Promise<ChartResu
     const p = await getPool(mint);
     if (!p.pool) return { mint, tf, status: p.status === 'OK' ? 'NO_POOL' : p.status, candles: [] };
     const cfg = TF[tf];
-    const r = await fetch(GT + '/pools/' + p.pool + '/ohlcv/' + cfg.unit + '?aggregate=' + cfg.agg + '&limit=' + cfg.limit);
+    const r = await fetch(GT + '/pools/' + p.pool + '/ohlcv/' + cfg.unit + '?aggregate=' + cfg.agg + '&limit=' + cfg.limit + '&token=' + mint);
     if (r.status === 429) return { mint, tf, status: 'RATE_LIMIT', candles: [] };
     if (!r.ok) return { mint, tf, status: 'ERROR', candles: [] };
     const j = await r.json();
