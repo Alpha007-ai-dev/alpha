@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useLocalSearchParams } from 'expo-router';
 import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Pressable } from 'react-native';
 import { resolve, Result } from '../../lib/resolver';
 import { getEvidence, Evidence } from '../../lib/evidence';
@@ -106,6 +107,12 @@ export default function Index() {
   const scRef = useRef<ScrollView>(null);
   const [amtOpen, setAmtOpen] = useState(false);
   const [amtText, setAmtText] = useState('');
+  const params = useLocalSearchParams<{ mint?: string }>();
+  const [lastParam, setLastParam] = useState<string | null>(null);
+  useEffect(() => {
+    const m = typeof params.mint === 'string' ? params.mint : undefined;
+    if (m && m !== lastParam) { setLastParam(m); setInput(m); analyze(m); }
+  }, [params.mint]);
   const [openEv, setOpenEv] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -546,49 +553,36 @@ export default function Index() {
             const buyDemo = async (usd: number) => {
               setAmtOpen(false);
               const ok = await openDemo(act.mint, act.symbol, usd, Number(act.snapshot.price), flow && flow.mint === act.mint ? flow.label : undefined);
-              if (ok && !dNow) decide('BUY_DEMO');
+              if (ok) decide('BUY_DEMO');
             };
+            if (dNow) return (
+              <Text style={{ color: C.sub, fontSize: 11, textAlign: 'center', fontFamily: F.mono, paddingVertical: 8 }}>
+                {dNow === 'ERROR' ? 'Could not save the decision. Try again.' : 'Saved: ' + (dNow === 'BUY_DEMO' ? 'BUY DEMO' : 'PASS') + ' · measuring 1h / 6h / 24h'}
+              </Text>
+            );
             return (
               <View>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable onPress={() => scRef.current?.scrollToEnd({ animated: true })} style={{ flex: 1.4, height: 46, borderRadius: 10, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: C.greenInk, fontSize: 13, letterSpacing: 1, fontFamily: F.monoBold }}>SWAP</Text>
+                  </Pressable>
+                  <Pressable disabled={dBusy} onPress={() => setAmtOpen(!amtOpen)} style={{ flex: 1, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.green, backgroundColor: amtOpen ? C.greenBg : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: C.green, fontSize: 12, letterSpacing: 1, fontFamily: F.monoBold }}>BUY DEMO</Text>
+                  </Pressable>
+                  <Pressable disabled={dBusy} onPress={() => decide('PASS')} style={{ flex: 0.8, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.border2, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: C.text, fontSize: 12, letterSpacing: 1, fontFamily: F.monoBold }}>PASS</Text>
+                  </Pressable>
+                </View>
                 {amtOpen ? (
-                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
                     {[10, 50, 100].map(v => (
                       <Pressable key={v} onPress={() => buyDemo(v)} style={{ flex: 1, height: 42, borderRadius: 10, borderWidth: 1, borderColor: C.green, backgroundColor: C.greenBg, alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ color: C.green, fontSize: 13, fontFamily: F.monoBold }}>{'$' + v}</Text>
                       </Pressable>
                     ))}
-                    <TextInput
-                      value={amtText}
-                      onChangeText={setAmtText}
-                      keyboardType="numeric"
-                      placeholder="other"
-                      placeholderTextColor={C.muted}
-                      returnKeyType="go"
-                      onSubmitEditing={() => { const v = Number(amtText); if (v > 0) { buyDemo(v); setAmtText(''); } }}
-                      style={{ flex: 1.2, height: 42, borderRadius: 10, borderWidth: 1, borderColor: C.border2, color: C.text, textAlign: 'center', fontFamily: F.mono, fontSize: 13, paddingVertical: 0 }}
-                    />
                   </View>
                 ) : null}
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => scRef.current?.scrollToEnd({ animated: true })} style={{ flex: 1.3, height: 46, borderRadius: 10, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: C.greenInk, fontSize: 13, letterSpacing: 1, fontFamily: F.monoBold }}>SWAP</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setAmtOpen(!amtOpen)} style={{ flex: 1.2, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.green, backgroundColor: amtOpen ? C.greenBg : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: C.green, fontSize: 12, letterSpacing: 1, fontFamily: F.monoBold }}>BUY DEMO</Text>
-                  </Pressable>
-                  {dNow ? (
-                    <View style={{ flex: 0.9, height: 46, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: C.sub, fontSize: 10, fontFamily: F.mono, textAlign: 'center' }}>{dNow === 'BUY_DEMO' ? 'LOGGED' : 'PASSED'}</Text>
-                    </View>
-                  ) : (
-                    <Pressable disabled={dBusy} onPress={() => decide('PASS')} style={{ flex: 0.9, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.border2, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: C.text, fontSize: 12, letterSpacing: 1, fontFamily: F.monoBold }}>PASS</Text>
-                    </Pressable>
-                  )}
-                </View>
-                <Text style={{ color: C.muted, fontSize: 10, textAlign: 'center', marginTop: 6, fontFamily: F.mono }}>
-                  {dNow ? 'Decision saved · measuring 1h / 6h / 24h' : 'SWAP uses real funds. BUY DEMO opens a demo position.'}
-                </Text>
+                <Text style={{ color: C.muted, fontSize: 10, textAlign: 'center', marginTop: 6, fontFamily: F.mono }}>SWAP uses real funds via Jupiter. BUY DEMO opens a demo position only.</Text>
               </View>
             );
           })()}
