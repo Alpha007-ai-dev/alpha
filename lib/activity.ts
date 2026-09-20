@@ -18,10 +18,15 @@ export type Snapshot = {
   ageDays?: number;
   ageMinutes?: number;
   devBalancePct?: number;
+  launchedAt?: string;
+  graduatedAt?: string;
+  launchpad?: string;
 };
 
 export type Row = { label: string; m5: string; h1: string; h6: string; h24: string };
 export type Para = { title: string; facts: string[]; text: string };
+
+export type Evidence = { window: string; holdersChg?: number; avgBuy?: number; avgSell?: number; tradesPerTrader?: number; organicPct?: number };
 
 export type Activity = {
   mint: string;
@@ -36,6 +41,8 @@ export type Activity = {
   knownCount: number;
   totalCount: number;
   youngNote?: string;
+  evidence?: Evidence;
+  lifecycle?: string;
 };
 
 export const LIQ_DROP_SHARP = -20;
@@ -111,6 +118,9 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     ageDays,
     ageMinutes,
     devBalancePct: isFinite(Number(tok.audit?.devBalancePercentage)) ? Number(tok.audit.devBalancePercentage) : undefined,
+    launchedAt: first ?? undefined,
+    graduatedAt: tok.graduatedAt ?? undefined,
+    launchpad: tok.launchpad ?? undefined,
   };
 
   const NA = 'n/a';
@@ -268,7 +278,36 @@ export async function getActivity(mint: string): Promise<Activity | null> {
   }
 
   const unknown = metrics.filter(m => m.level === 'UNKNOWN').length;
+  // evidence tiles + lifecycle line (additive, display only)
+  const evU = (v: number) => (isNaN(v) ? undefined : v);
+  const evidence: Evidence = {
+    window: WLBL,
+    holdersChg: evU(Number(W.holderChange ?? NaN)),
+    avgBuy: evU(avgBuy),
+    avgSell: evU(avgSell),
+    tradesPerTrader: evU(perWallet),
+    organicPct: evU(ratio),
+  };
+  const lcPad = (n: number) => (n < 10 ? '0' : '') + n;
+  const lcHm = (iso: string) => { const d = new Date(iso); return lcPad(d.getHours()) + ':' + lcPad(d.getMinutes()); };
+  const lcYmd = (iso: string) => { const d = new Date(iso); return d.getFullYear() + '-' + lcPad(d.getMonth() + 1) + '-' + lcPad(d.getDate()); };
+  let lifecycle: string | undefined;
+  if (first) {
+    const recent = am < 1440;
+    lifecycle = 'LAUNCHED ' + (recent ? lcHm(first) : lcYmd(first));
+    if (tok.graduatedAt) {
+      const gm = Math.round((new Date(tok.graduatedAt).getTime() - new Date(first).getTime()) / 60000);
+      lifecycle += ' -> GRADUATED ' + (recent ? lcHm(tok.graduatedAt) : lcYmd(tok.graduatedAt))
+        + (gm >= 0 ? ' | ' + (gm < 120 ? gm + ' min' : Math.round(gm / 60) + ' h') : '');
+    } else if (tok.launchpad) {
+      lifecycle += ' | NOT GRADUATED';
+    }
+    if (tok.launchpad) lifecycle += ' | ' + tok.launchpad;
+  }
+
   return {
+    evidence,
+    lifecycle,
     mint,
     symbol: tok.symbol,
     name: tok.name,

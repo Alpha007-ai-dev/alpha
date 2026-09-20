@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Pressable } from 'react-native';
 import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
@@ -173,6 +173,15 @@ export default function Index() {
             </Pressable>
           </View>
           {act.youngNote ? <Text style={s.youngNote}>{act.youngNote}</Text> : null}
+          {act.lifecycle ? <Text style={s.tokenName}>{act.lifecycle}</Text> : null}
+          {act.evidence ? (
+            <View style={s.snapGrid}>
+              <View style={s.snapCell}><Text style={s.snapLabel}>{'HOLDERS ' + act.evidence.window.toUpperCase()}</Text><Text style={s.snapVal}>{act.evidence.holdersChg !== undefined ? (act.evidence.holdersChg >= 0 ? '+' : '') + act.evidence.holdersChg.toFixed(1) + '%' : '--'}</Text></View>
+              <View style={s.snapCell}><Text style={s.snapLabel}>AVG BUY / SELL</Text><Text style={s.snapVal}>{fmtMoney(act.evidence.avgBuy) + ' / ' + fmtMoney(act.evidence.avgSell)}</Text></View>
+              <View style={s.snapCell}><Text style={s.snapLabel}>TRADES / TRADER</Text><Text style={s.snapVal}>{act.evidence.tradesPerTrader !== undefined ? act.evidence.tradesPerTrader.toFixed(2) : '--'}</Text></View>
+              <View style={s.snapCell}><Text style={s.snapLabel}>ORGANIC (JUPITER)</Text><Text style={s.snapVal}>{act.evidence.organicPct !== undefined ? act.evidence.organicPct.toFixed(1) + '%' : '--'}</Text></View>
+            </View>
+          ) : null}
 
           <View style={s.tabs}>
             <Pressable onPress={() => setTab('live')} style={[s.tab, tab === 'live' && s.tabOn]}>
