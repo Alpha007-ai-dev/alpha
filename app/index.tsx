@@ -3,6 +3,7 @@ import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Press
 import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
 import { getActivity, Activity } from '../lib/activity';
+import { computeMarketState } from '../lib/marketState';
 import { logObservation, resolveOutcomes, journalStats, exportJournal } from '../lib/journal';
 import { collectCandidates, candidateStats, exportCandidates } from '../lib/candidates';
 import { useMobileWallet } from '@wallet-ui/react-native-kit';
@@ -31,6 +32,7 @@ export default function Index() {
   const [evErr, setEvErr] = useState<string | null>(null);
   const [tab, setTab] = useState<'live' | 'profile'>('live');
   const [openExp, setOpenExp] = useState(false);
+  const [msOpen, setMsOpen] = useState(false);
   const [jStats, setJStats] = useState({ total: 0, resolved: 0, complete: 0, pending: 0 });
   const [jText, setJText] = useState<string | null>(null);
   const [cStats, setCStats] = useState({ total: 0 });
@@ -183,6 +185,39 @@ export default function Index() {
             </View>
           ) : null}
 
+          {(() => {
+            const ms = computeMarketState(act.rawWindow, act.evidence?.window ?? '1h', !!act.rawWindow, act.metrics);
+            const col = ms.state === 'BUYING_MOMENTUM' ? '#22c55e'
+              : ms.state === 'CALM' || ms.state === 'INSUFFICIENT_DATA' ? '#6b7280'
+              : ms.state === 'MIXED' || ms.state === 'UNUSUAL_ACTIVITY' ? '#fbbf24'
+              : '#ef4444';
+            return (
+              <View style={{ marginTop: 16, padding: 14, borderWidth: 1, borderColor: col, borderRadius: 10 }}>
+                <Text style={s.snapLabel}>{'MARKET STATE | ' + (act.evidence?.window ?? '').toUpperCase() + ' | RULES v' + ms.ruleVersion}</Text>
+                <Text style={{ color: col, fontSize: 20, fontWeight: '700', marginTop: 6 }}>{ms.label}</Text>
+                <Text style={[s.snapLabel, { marginTop: 12 }]}>WHAT IS HAPPENING</Text>
+                <Text style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 19, marginTop: 4 }}>{ms.happening}</Text>
+                <Text style={[s.snapLabel, { marginTop: 10 }]}>WHAT IT MEANS</Text>
+                <Text style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 19, marginTop: 4 }}>{ms.means}</Text>
+                <Text style={[s.snapLabel, { marginTop: 10, color: '#fbbf24' }]}>WHAT TO WATCH</Text>
+                <Text style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 19, marginTop: 4 }}>{ms.watch}</Text>
+                <Pressable onPress={() => setMsOpen(!msOpen)} style={{ marginTop: 12 }}>
+                  <Text style={s.refreshBtn}>{msOpen ? 'HIDE EVIDENCE' : 'VIEW EVIDENCE'}</Text>
+                </Pressable>
+                {msOpen ? (
+                  <View style={{ marginTop: 8 }}>
+                    <Text style={{ color: '#9ca3af', fontSize: 11, lineHeight: 16 }}>{ms.facts}</Text>
+                    {ms.trace.map(r => (
+                      <Text key={r.n} style={{ color: r.pass ? col : '#6b7280', fontSize: 11, lineHeight: 16, marginTop: 6 }}>
+                        {r.n + '  ' + r.state.replace(/_/g, ' ') + (r.pass ? '  [MATCH]' : '  [no]') + '\n     ' + r.rule}
+                      </Text>
+                    ))}
+                    <Text style={{ color: '#6b7280', fontSize: 10, marginTop: 8 }}>First match wins. Not financial advice.</Text>
+                  </View>
+                ) : null}
+              </View>
+            );
+          })()}
           <View style={s.tabs}>
             <Pressable onPress={() => setTab('live')} style={[s.tab, tab === 'live' && s.tabOn]}>
               <Text style={[s.tabText, tab === 'live' && s.tabTextOn]}>LIVE ACTIVITY</Text>

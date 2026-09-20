@@ -43,6 +43,7 @@ export type Activity = {
   youngNote?: string;
   evidence?: Evidence;
   lifecycle?: string;
+  rawWindow?: any;
 };
 
 export const LIQ_DROP_SHARP = -20;
@@ -308,6 +309,7 @@ export async function getActivity(mint: string): Promise<Activity | null> {
   return {
     evidence,
     lifecycle,
+    rawWindow: W,
     mint,
     symbol: tok.symbol,
     name: tok.name,
