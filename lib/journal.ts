@@ -178,6 +178,23 @@ export async function resolveOutcomes(): Promise<number> {
   return done;
 }
 
+export async function listObservations(): Promise<Observation[]> {
+  const list = await readAll();
+  return list.sort((a, b) => b.t - a.t);
+}
+
+export async function setFlowKey(mint: string, flowKey: string, flowLabel: string) {
+  try {
+    const list = await readAll();
+    let latest: any = null;
+    for (const o of list) if (o.mint === mint && (!latest || o.t > latest.t)) latest = o;
+    if (!latest || latest.flowKey) return;
+    latest.flowKey = flowKey;
+    latest.flowLabel = flowLabel;
+    await writeAll(list);
+  } catch {}
+}
+
 export async function journalStats() {
   const list = await readAll();
   const resolved = list.filter(o => o.outcomes.length > 0).length;
@@ -193,7 +210,7 @@ export async function exportJournal(): Promise<string> {
     'liquidity_trend', 'reversal', 'organic_participation', 'pressure', 'tradesize',
     'horizon', 'out_t', 'out_age_h', 'out_price', 'out_liquidity', 'out_holders',
     'price_chg_pct', 'liq_chg_pct', 'holders_chg_pct',
-    'outcome', 'no_data_reason', 't0_dev_balance_pct', 'out_dev_balance_pct', 'market_state', 'rule_version', 'ms_window', 'decision', 'decision_t',
+    'outcome', 'no_data_reason', 't0_dev_balance_pct', 'out_dev_balance_pct', 'market_state', 'rule_version', 'ms_window', 'decision', 'decision_t', 'flow_key',
   ].join(',');
 
   const rows: string[] = [];
@@ -205,7 +222,7 @@ export async function exportJournal(): Promise<string> {
       o.states.organic_participation ?? '', o.states.pressure ?? '', o.states.tradesize ?? '',
     ];
     if (!o.outcomes.length) {
-      rows.push(base.concat(['', '', '', '', '', '', '', '', '', '', '', String((o as any).devBalancePct ?? ''), '', String((o as any).marketState ?? ''), String((o as any).ruleVersion ?? ''), String((o as any).msWindow ?? ''), String((o as any).decision ?? ''), (o as any).decisionT ? new Date((o as any).decisionT).toISOString() : '']).join(','));
+      rows.push(base.concat(['', '', '', '', '', '', '', '', '', '', '', String((o as any).devBalancePct ?? ''), '', String((o as any).marketState ?? ''), String((o as any).ruleVersion ?? ''), String((o as any).msWindow ?? ''), String((o as any).decision ?? ''), (o as any).decisionT ? new Date((o as any).decisionT).toISOString() : '', String((o as any).flowKey ?? '')]).join(','));
     } else {
       for (const x of o.outcomes) {
         rows.push(base.concat([
@@ -227,6 +244,7 @@ export async function exportJournal(): Promise<string> {
           String((o as any).msWindow ?? ''),
           String((o as any).decision ?? ''),
           (o as any).decisionT ? new Date((o as any).decisionT).toISOString() : '',
+          String((o as any).flowKey ?? ''),
         ]).join(','));
       }
     }

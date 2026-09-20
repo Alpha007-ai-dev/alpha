@@ -10,7 +10,7 @@ import { getFlow, Flow, flowMoney } from '../../lib/flow';
 import { getPool } from '../../lib/chart';
 import { fetchCandles, ChartResult, ChartTf } from '../../lib/chart';
 import CandleChart from '../../components/CandleChart';
-import { logObservation, resolveOutcomes, journalStats, exportJournal, recordDecision } from '../../lib/journal';
+import { logObservation, resolveOutcomes, journalStats, exportJournal, recordDecision, setFlowKey } from '../../lib/journal';
 import { collectCandidates, candidateStats, exportCandidates } from '../../lib/candidates';
 import { useMobileWallet } from '@wallet-ui/react-native-kit';
 import { getQuote, Quote, fmtAmount, buildSwapTx, decodeTx, PAY_TOKENS, PayToken } from '../../lib/swap';
@@ -54,7 +54,7 @@ export default function Index() {
     const sn: any = act.snapshot;
     getPool(act.mint)
       .then(p => getFlow(act.mint, p.pool, sn.dev))
-      .then(f => { if (alive) setFlow({ ...f, mint: act.mint }); });
+      .then(f => { if (alive) { setFlow({ ...f, mint: act.mint }); if (f.status === 'OK') setFlowKey(act.mint, f.key, f.label); } });
     return () => { alive = false; };
   }, [act?.mint, loadedAt]);
   const [decision, setDecision] = useState<{ mint: string; d: string } | null>(null);
