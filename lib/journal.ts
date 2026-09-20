@@ -190,6 +190,7 @@ export async function exportJournal(): Promise<string> {
     'liquidity_trend', 'reversal', 'organic_participation', 'pressure', 'tradesize',
     'horizon', 'out_t', 'out_age_h', 'out_price', 'out_liquidity', 'out_holders',
     'price_chg_pct', 'liq_chg_pct', 'holders_chg_pct',
+    'outcome', 'no_data_reason', 't0_dev_balance_pct', 'out_dev_balance_pct',
   ].join(',');
 
   const rows: string[] = [];
@@ -201,7 +202,7 @@ export async function exportJournal(): Promise<string> {
       o.states.organic_participation ?? '', o.states.pressure ?? '', o.states.tradesize ?? '',
     ];
     if (!o.outcomes.length) {
-      rows.push(base.concat(['', '', '', '', '', '', '', '', '']).join(','));
+      rows.push(base.concat(['', '', '', '', '', '', '', '', '', '', '', String((o as any).devBalancePct ?? ''), '']).join(','));
     } else {
       for (const x of o.outcomes) {
         rows.push(base.concat([
@@ -214,6 +215,10 @@ export async function exportJournal(): Promise<string> {
           x.priceChangePct?.toFixed(2) ?? '',
           x.liquidityChangePct?.toFixed(2) ?? '',
           x.holdersChangePct?.toFixed(2) ?? '',
+          String((x as any).outcome ?? ''),
+          String((x as any).noDataReason ?? ''),
+          String((o as any).devBalancePct ?? ''),
+          String((x as any).devBalancePct ?? ''),
         ]).join(','));
       }
     }
