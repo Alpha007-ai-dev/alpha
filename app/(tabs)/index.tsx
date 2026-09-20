@@ -170,7 +170,8 @@ export default function Index() {
   const statusColor = res?.status === 'VERIFIED' ? '#22c55e' : res?.status === 'AMBIGUOUS' ? '#fbbf24' : '#ef4444';
 
   return (
-    <ScrollView style={s.root} contentContainerStyle={{ padding: 16, paddingTop: 60, paddingBottom: 60 }}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <ScrollView style={s.root} contentContainerStyle={{ padding: 16, paddingTop: 60, paddingBottom: 24 }}>
       <Text style={s.brand}>ALPHA</Text>
       <Text style={s.tag}>Alpha never guesses a token. Alpha verifies it.</Text>
 
@@ -345,27 +346,6 @@ export default function Index() {
                 {has && delta <= -0.01 ? <Text style={{ color: C.amber, fontSize: 12, lineHeight: 18, marginTop: 6 }}>WHAT TO WATCH: whether the balance keeps falling, and whether liquidity drops at the same time.</Text> : null}
                 {deployer ? <Text style={{ color: C.sub, fontSize: 12, lineHeight: 18, marginTop: 6 }}>{deployer}</Text> : null}
                 <Text style={{ color: C.sub, fontSize: 10, marginTop: 6 }}>Tracks the deployer wallet only. A lower balance is not proof of a sale.</Text>
-              </View>
-            );
-          })()}
-          {(() => {
-            const dNow = decision && decision.mint === act.mint ? decision.d : null;
-            return (
-              <View style={{ marginTop: 16, padding: 14, borderWidth: 1, borderColor: '#374151', borderRadius: 10 }}>
-                <Text style={s.snapLabel}>YOUR DECISION</Text>
-                {dNow ? (
-                  <Text style={{ color: C.text, fontSize: 13, lineHeight: 19, marginTop: 8 }}>{dNow === 'ERROR' ? 'Could not save the decision. Try again.' : 'Saved: ' + (dNow === 'BUY_DEMO' ? 'BUY DEMO' : 'PASS') + '. Alpha measures what happens next at 1h, 6h and 24h.'}</Text>
-                ) : (
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                    <Pressable disabled={dBusy} onPress={() => decide('BUY_DEMO')} style={{ flex: 1, height: 48, borderRadius: 8, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: '#052e16', fontWeight: '700', fontSize: 13 }}>BUY DEMO</Text>
-                    </Pressable>
-                    <Pressable disabled={dBusy} onPress={() => decide('PASS')} style={{ flex: 1, height: 48, borderRadius: 8, borderWidth: 1, borderColor: '#4b5563', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>PASS</Text>
-                    </Pressable>
-                  </View>
-                )}
-                <Text style={{ color: C.sub, fontSize: 10, marginTop: 8 }}>Demo only. No funds move. Not financial advice.</Text>
               </View>
             );
           })()}
@@ -554,7 +534,33 @@ export default function Index() {
         </Pressable>
       </View>
       {jText ? <Text selectable style={s.jDump}>{jText}</Text> : null}
-    </ScrollView>
+      </ScrollView>
+      {act && flow && flow.mint === act.mint ? (
+        <View style={{ borderTopWidth: 1, borderTopColor: C.border, backgroundColor: '#0B0F0D', paddingHorizontal: 16, paddingVertical: 10 }}>
+          {(() => {
+            const dNow = decision && decision.mint === act.mint ? decision.d : null;
+            if (dNow) return (
+              <Text style={{ color: C.sub, fontSize: 11, textAlign: 'center', fontFamily: F.mono, paddingVertical: 8 }}>
+                {dNow === 'ERROR' ? 'Could not save the decision. Try again.' : 'Saved: ' + (dNow === 'BUY_DEMO' ? 'BUY DEMO' : 'PASS') + ' · measuring 1h / 6h / 24h'}
+              </Text>
+            );
+            return (
+              <View>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable disabled={dBusy} onPress={() => decide('BUY_DEMO')} style={{ flex: 1, height: 46, borderRadius: 10, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: C.greenInk, fontSize: 13, letterSpacing: 1, fontFamily: F.monoBold }}>BUY DEMO</Text>
+                  </Pressable>
+                  <Pressable disabled={dBusy} onPress={() => decide('PASS')} style={{ flex: 1, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.border2, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: C.text, fontSize: 13, letterSpacing: 1, fontFamily: F.monoBold }}>PASS</Text>
+                  </Pressable>
+                </View>
+                <Text style={{ color: C.muted, fontSize: 10, textAlign: 'center', marginTop: 6, fontFamily: F.mono }}>Demo only. No funds move. Not financial advice.</Text>
+              </View>
+            );
+          })()}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
