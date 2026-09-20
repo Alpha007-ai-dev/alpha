@@ -1,4 +1,4 @@
-﻿export type ActLevel = 'CALM' | 'NOTABLE' | 'SHARP' | 'UNKNOWN';
+export type ActLevel = 'CALM' | 'NOTABLE' | 'SHARP' | 'UNKNOWN';
 
 export type Metric = {
   key: string;
@@ -118,7 +118,7 @@ export async function getActivity(mint: string): Promise<Activity | null> {
   const svol = (w: any, ok: boolean) => (!ok ? NA : Number(w.sellVolume ?? 0) > 0 ? money(w.sellVolume) : '--');
   const vol = (w: any, ok: boolean) => {
     if (!ok) return NA;
-    const b = Number(w.buyVolume ?? 0) + Number(w.sellVolume ?? 0);
+    const b = w.buyVolume === undefined || w.sellVolume === undefined ? NaN : Number(w.buyVolume) + Number(w.sellVolume);
     return b > 0 ? money(b) : '--';
   };
   const bs = (w: any, ok: boolean) => (!ok ? NA : w.numBuys !== undefined ? num(w.numBuys) + ' / ' + num(w.numSells) : '--');
@@ -205,7 +205,7 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     value: isNaN(sr) ? 'unknown' : num(sells) + ' sells / ' + num(buys) + ' buys',
     fact: (isNaN(sr) ? 'No trade counts.' : 'Over the last ' + WLBL + ': ' + num(sells) + ' sells, ' + num(buys) + ' buys.')
       + (isNaN(perWallet) ? '' : '  ' + perWallet.toFixed(1) + ' trades per wallet.'),
-    reading: isNaN(sr) ? '' : sr > 1 ? 'Activity is shifting toward sellers.' : 'Buyers outnumber sellers.',
+    reading: isNaN(sr) ? '' : sr > 1 ? 'Sellers outnumber buyers.' : 'Buyers outnumber sellers.',
   });
 
   // average trade size on each side
@@ -225,7 +225,7 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     reading: isNaN(sizeRatio)
       ? ''
       : sizeRatio >= 1.5
-      ? 'Sells are larger than buys. Many small buyers, fewer large sellers.'
+      ? 'Average sell is larger than average buy.'
       : sizeRatio <= 0.67
       ? 'Buys are larger than sells.'
       : 'Buy and sell sizes are broadly balanced.',
