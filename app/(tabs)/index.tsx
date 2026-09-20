@@ -7,6 +7,7 @@ import { computeMarketState } from '../../lib/marketState';
 import { getCreatorInfo, CreatorInfo } from '../../lib/dev';
 import { C, F } from '../../lib/theme';
 import { getFlow, Flow, flowMoney } from '../../lib/flow';
+import { openDemo } from '../../lib/demo';
 import { getPool } from '../../lib/chart';
 import { fetchCandles, ChartResult, ChartTf } from '../../lib/chart';
 import CandleChart from '../../components/CandleChart';
@@ -103,6 +104,8 @@ export default function Index() {
   const [sErr, setSErr] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const scRef = useRef<ScrollView>(null);
+  const [amtOpen, setAmtOpen] = useState(false);
+  const [amtText, setAmtText] = useState('');
   const [openEv, setOpenEv] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -540,25 +543,52 @@ export default function Index() {
         <View style={{ borderTopWidth: 1, borderTopColor: C.border, backgroundColor: '#0B0F0D', paddingHorizontal: 16, paddingVertical: 10 }}>
           {(() => {
             const dNow = decision && decision.mint === act.mint ? decision.d : null;
-            if (dNow) return (
-              <Text style={{ color: C.sub, fontSize: 11, textAlign: 'center', fontFamily: F.mono, paddingVertical: 8 }}>
-                {dNow === 'ERROR' ? 'Could not save the decision. Try again.' : 'Saved: ' + (dNow === 'BUY_DEMO' ? 'BUY DEMO' : 'PASS') + ' · measuring 1h / 6h / 24h'}
-              </Text>
-            );
+            const buyDemo = async (usd: number) => {
+              setAmtOpen(false);
+              const ok = await openDemo(act.mint, act.symbol, usd, Number(act.snapshot.price), flow && flow.mint === act.mint ? flow.label : undefined);
+              if (ok && !dNow) decide('BUY_DEMO');
+            };
             return (
               <View>
+                {amtOpen ? (
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+                    {[10, 50, 100].map(v => (
+                      <Pressable key={v} onPress={() => buyDemo(v)} style={{ flex: 1, height: 42, borderRadius: 10, borderWidth: 1, borderColor: C.green, backgroundColor: C.greenBg, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ color: C.green, fontSize: 13, fontFamily: F.monoBold }}>{'$' + v}</Text>
+                      </Pressable>
+                    ))}
+                    <TextInput
+                      value={amtText}
+                      onChangeText={setAmtText}
+                      keyboardType="numeric"
+                      placeholder="other"
+                      placeholderTextColor={C.muted}
+                      returnKeyType="go"
+                      onSubmitEditing={() => { const v = Number(amtText); if (v > 0) { buyDemo(v); setAmtText(''); } }}
+                      style={{ flex: 1.2, height: 42, borderRadius: 10, borderWidth: 1, borderColor: C.border2, color: C.text, textAlign: 'center', fontFamily: F.mono, fontSize: 13, paddingVertical: 0 }}
+                    />
+                  </View>
+                ) : null}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => scRef.current?.scrollToEnd({ animated: true })} style={{ flex: 1.4, height: 46, borderRadius: 10, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
+                  <Pressable onPress={() => scRef.current?.scrollToEnd({ animated: true })} style={{ flex: 1.3, height: 46, borderRadius: 10, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ color: C.greenInk, fontSize: 13, letterSpacing: 1, fontFamily: F.monoBold }}>SWAP</Text>
                   </Pressable>
-                  <Pressable disabled={dBusy} onPress={() => decide('BUY_DEMO')} style={{ flex: 1, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
+                  <Pressable onPress={() => setAmtOpen(!amtOpen)} style={{ flex: 1.2, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.green, backgroundColor: amtOpen ? C.greenBg : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ color: C.green, fontSize: 12, letterSpacing: 1, fontFamily: F.monoBold }}>BUY DEMO</Text>
                   </Pressable>
-                  <Pressable disabled={dBusy} onPress={() => decide('PASS')} style={{ flex: 0.8, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.border2, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: C.text, fontSize: 12, letterSpacing: 1, fontFamily: F.monoBold }}>PASS</Text>
-                  </Pressable>
+                  {dNow ? (
+                    <View style={{ flex: 0.9, height: 46, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: C.sub, fontSize: 10, fontFamily: F.mono, textAlign: 'center' }}>{dNow === 'BUY_DEMO' ? 'LOGGED' : 'PASSED'}</Text>
+                    </View>
+                  ) : (
+                    <Pressable disabled={dBusy} onPress={() => decide('PASS')} style={{ flex: 0.9, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.border2, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: C.text, fontSize: 12, letterSpacing: 1, fontFamily: F.monoBold }}>PASS</Text>
+                    </Pressable>
+                  )}
                 </View>
-                <Text style={{ color: C.muted, fontSize: 10, textAlign: 'center', marginTop: 6, fontFamily: F.mono }}>SWAP uses real funds via Jupiter. BUY DEMO saves a decision only.</Text>
+                <Text style={{ color: C.muted, fontSize: 10, textAlign: 'center', marginTop: 6, fontFamily: F.mono }}>
+                  {dNow ? 'Decision saved · measuring 1h / 6h / 24h' : 'SWAP uses real funds. BUY DEMO opens a demo position.'}
+                </Text>
               </View>
             );
           })()}
