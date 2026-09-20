@@ -4,6 +4,8 @@ import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
 import { getActivity, Activity } from '../lib/activity';
 import { computeMarketState } from '../lib/marketState';
+import { fetchCandles, ChartResult, ChartTf } from '../lib/chart';
+import CandleChart from '../components/CandleChart';
 import { logObservation, resolveOutcomes, journalStats, exportJournal } from '../lib/journal';
 import { collectCandidates, candidateStats, exportCandidates } from '../lib/candidates';
 import { useMobileWallet } from '@wallet-ui/react-native-kit';
@@ -38,6 +40,18 @@ export default function Index() {
   const [cStats, setCStats] = useState({ total: 0 });
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [nowTick, setNowTick] = useState(Date.now());
+  const [chartTf, setChartTf] = useState<ChartTf>('1H');
+  const [chart, setChart] = useState<ChartResult | null>(null);
+  const [chartBusy, setChartBusy] = useState(false);
+  useEffect(() => {
+    if (!act) return;
+    let alive = true;
+    setChartBusy(true);
+    fetchCandles(act.mint, chartTf)
+      .then(r => { if (alive) setChart(r); })
+      .finally(() => { if (alive) setChartBusy(false); });
+    return () => { alive = false; };
+  }, [act?.mint, chartTf, loadedAt]);
 
   useEffect(() => {
     const id = setInterval(() => setNowTick(Date.now()), 5000);
@@ -166,6 +180,30 @@ export default function Index() {
             <View style={s.snapCell}><Text style={s.snapLabel}>AGE</Text><Text style={s.snapVal}>{act.snapshot.ageMinutes !== undefined && act.snapshot.ageMinutes < 1440 ? act.snapshot.ageMinutes + 'm' : act.snapshot.ageDays !== undefined ? act.snapshot.ageDays + 'd' : '--'}</Text></View>
           </View>
 
+          {(() => {
+            const cv = chart && chart.mint === act.mint && chart.tf === chartTf ? chart : null;
+            return (
+              <View style={{ marginTop: 16 }}>
+                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+                  {(['1H', '6H', '24H'] as ChartTf[]).map(tf => (
+                    <Pressable key={tf} onPress={() => setChartTf(tf)} style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: 6, borderWidth: 1, borderColor: chartTf === tf ? '#22c55e' : '#374151' }}>
+                      <Text style={{ color: chartTf === tf ? '#22c55e' : '#9ca3af', fontSize: 12 }}>{tf}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {cv && cv.status === 'OK' ? (
+                  <CandleChart candles={cv.candles} height={180} />
+                ) : chartBusy ? (
+                  <View style={{ height: 180, justifyContent: 'center' }}><ActivityIndicator /></View>
+                ) : (
+                  <Text style={s.youngNote}>{!cv ? '' : cv.status === 'NO_POOL' ? 'Chart not available for this token yet.' : cv.status === 'RATE_LIMIT' ? 'Chart source is busy. Try REFRESH in a minute.' : 'Chart could not be loaded.'}</Text>
+                )}
+                {cv && cv.status === 'OK' ? (
+                  <Text style={{ color: '#6b7280', fontSize: 10, marginTop: 4 }}>{'Price range ' + chartTf + ' | GeckoTerminal | ' + (cv.dex ?? 'pool') + ' | ' + cv.candles.length + ' candles'}</Text>
+                ) : null}
+              </View>
+            );
+          })()}
           <View style={s.freshRow}>
             <Text style={s.freshText}>
               {loadedAt ? 'UPDATED ' + (Math.floor((nowTick - loadedAt) / 1000) < 10 ? 'JUST NOW' : Math.floor((nowTick - loadedAt) / 1000) < 60 ? Math.floor((nowTick - loadedAt) / 1000) + 'S AGO' : Math.floor((nowTick - loadedAt) / 60000) + 'M AGO') : ''}
