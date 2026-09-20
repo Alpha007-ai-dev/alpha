@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Pressable } from 'react-native';
-import { resolve, Result } from '../lib/resolver';
-import { getEvidence, Evidence } from '../lib/evidence';
-import { getActivity, Activity } from '../lib/activity';
-import { computeMarketState } from '../lib/marketState';
-import { getCreatorInfo, CreatorInfo } from '../lib/dev';
-import { fetchCandles, ChartResult, ChartTf } from '../lib/chart';
-import CandleChart from '../components/CandleChart';
-import { logObservation, resolveOutcomes, journalStats, exportJournal, recordDecision } from '../lib/journal';
-import { collectCandidates, candidateStats, exportCandidates } from '../lib/candidates';
+import { resolve, Result } from '../../lib/resolver';
+import { getEvidence, Evidence } from '../../lib/evidence';
+import { getActivity, Activity } from '../../lib/activity';
+import { computeMarketState } from '../../lib/marketState';
+import { getCreatorInfo, CreatorInfo } from '../../lib/dev';
+import { fetchCandles, ChartResult, ChartTf } from '../../lib/chart';
+import CandleChart from '../../components/CandleChart';
+import { logObservation, resolveOutcomes, journalStats, exportJournal, recordDecision } from '../../lib/journal';
+import { collectCandidates, candidateStats, exportCandidates } from '../../lib/candidates';
 import { useMobileWallet } from '@wallet-ui/react-native-kit';
-import { getQuote, Quote, fmtAmount, buildSwapTx, decodeTx, PAY_TOKENS, PayToken } from '../lib/swap';
+import { getQuote, Quote, fmtAmount, buildSwapTx, decodeTx, PAY_TOKENS, PayToken } from '../../lib/swap';
 
 const lv = (l: string) => (l === 'HIGH' ? '#ef4444' : l === 'MEDIUM' ? '#fbbf24' : l === 'LOW' ? '#22c55e' : '#6b7280');
 const av = (l: string) => (l === 'SHARP' ? '#ef4444' : l === 'NOTABLE' ? '#fbbf24' : l === 'CALM' ? '#22c55e' : '#6b7280');
