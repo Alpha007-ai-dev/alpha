@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, Pressable } from 'react-native';
 import { resolve, Result } from '../../lib/resolver';
 import { getEvidence, Evidence } from '../../lib/evidence';
@@ -102,6 +102,7 @@ export default function Index() {
   const [sig, setSig] = useState<string | null>(null);
   const [sErr, setSErr] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const scRef = useRef<ScrollView>(null);
   const [openEv, setOpenEv] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -171,7 +172,7 @@ export default function Index() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScrollView style={s.root} contentContainerStyle={{ padding: 16, paddingTop: 60, paddingBottom: 24 }}>
+      <ScrollView ref={scRef} style={s.root} contentContainerStyle={{ padding: 16, paddingTop: 60, paddingBottom: 24 }}>
       <Text style={s.brand}>ALPHA</Text>
       <Text style={s.tag}>Alpha never guesses a token. Alpha verifies it.</Text>
 
@@ -547,14 +548,17 @@ export default function Index() {
             return (
               <View>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable disabled={dBusy} onPress={() => decide('BUY_DEMO')} style={{ flex: 1, height: 46, borderRadius: 10, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: C.greenInk, fontSize: 13, letterSpacing: 1, fontFamily: F.monoBold }}>BUY DEMO</Text>
+                  <Pressable onPress={() => scRef.current?.scrollToEnd({ animated: true })} style={{ flex: 1.4, height: 46, borderRadius: 10, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: C.greenInk, fontSize: 13, letterSpacing: 1, fontFamily: F.monoBold }}>SWAP</Text>
                   </Pressable>
-                  <Pressable disabled={dBusy} onPress={() => decide('PASS')} style={{ flex: 1, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.border2, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: C.text, fontSize: 13, letterSpacing: 1, fontFamily: F.monoBold }}>PASS</Text>
+                  <Pressable disabled={dBusy} onPress={() => decide('BUY_DEMO')} style={{ flex: 1, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: C.green, fontSize: 12, letterSpacing: 1, fontFamily: F.monoBold }}>BUY DEMO</Text>
+                  </Pressable>
+                  <Pressable disabled={dBusy} onPress={() => decide('PASS')} style={{ flex: 0.8, height: 46, borderRadius: 10, borderWidth: 1, borderColor: C.border2, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: C.text, fontSize: 12, letterSpacing: 1, fontFamily: F.monoBold }}>PASS</Text>
                   </Pressable>
                 </View>
-                <Text style={{ color: C.muted, fontSize: 10, textAlign: 'center', marginTop: 6, fontFamily: F.mono }}>Demo only. No funds move. Not financial advice.</Text>
+                <Text style={{ color: C.muted, fontSize: 10, textAlign: 'center', marginTop: 6, fontFamily: F.mono }}>SWAP uses real funds via Jupiter. BUY DEMO saves a decision only.</Text>
               </View>
             );
           })()}
