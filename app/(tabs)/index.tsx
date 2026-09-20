@@ -246,7 +246,31 @@ export default function Index() {
             </Pressable>
           </View>
           {act.youngNote ? <Text style={s.youngNote}>{act.youngNote}</Text> : null}
-          {act.lifecycle ? <Text style={s.tokenName}>{act.lifecycle}</Text> : null}
+          {(() => {
+            const sn: any = act.snapshot;
+            const chips: { t: string; on?: boolean }[] = [];
+            if (sn.launchpad) chips.push({ t: sn.launchpad });
+            if (sn.graduatedAt && sn.launchedAt) {
+              const m = Math.round((new Date(sn.graduatedAt).getTime() - new Date(sn.launchedAt).getTime()) / 60000);
+              chips.push({ t: 'Graduated in ' + (m < 120 ? m + ' min' : Math.round(m / 60) + ' h'), on: true });
+            } else if (sn.launchpad) {
+              chips.push({ t: 'Not graduated' });
+            }
+            if (sn.devMints === 1) chips.push({ t: 'New creator', on: true });
+            else if (sn.devMints > 1) chips.push({ t: sn.devMints + ' tokens by creator' });
+            const am = sn.ageMinutes;
+            if (am !== undefined) chips.push({ t: am < 60 ? am + ' min old' : am < 1440 ? Math.floor(am / 60) + 'h old' : Math.floor(am / 1440) + 'd old' });
+            if (!chips.length) return null;
+            return (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                {chips.map(c => (
+                  <View key={c.t} style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: c.on ? C.green : C.border, backgroundColor: c.on ? C.greenBg : C.card }}>
+                    <Text style={{ color: c.on ? C.green : C.text, fontSize: 11, fontFamily: F.mono }}>{c.t}</Text>
+                  </View>
+                ))}
+              </View>
+            );
+          })()}
           {act.evidence ? (
             <View style={s.snapGrid}>
               <View style={s.snapCell}><Text style={s.snapLabel}>{'HOLDERS ' + act.evidence.window.toUpperCase()}</Text><Text style={s.snapVal}>{act.evidence.holdersChg !== undefined ? (act.evidence.holdersChg >= 0 ? '+' : '') + act.evidence.holdersChg.toFixed(1) + '%' : '--'}</Text></View>
