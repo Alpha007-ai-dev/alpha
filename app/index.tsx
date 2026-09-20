@@ -4,6 +4,7 @@ import { resolve, Result } from '../lib/resolver';
 import { getEvidence, Evidence } from '../lib/evidence';
 import { getActivity, Activity } from '../lib/activity';
 import { computeMarketState } from '../lib/marketState';
+import { getCreatorInfo, CreatorInfo } from '../lib/dev';
 import { fetchCandles, ChartResult, ChartTf } from '../lib/chart';
 import CandleChart from '../components/CandleChart';
 import { logObservation, resolveOutcomes, journalStats, exportJournal, recordDecision } from '../lib/journal';
@@ -45,6 +46,15 @@ export default function Index() {
   const [chartBusy, setChartBusy] = useState(false);
   const [decision, setDecision] = useState<{ mint: string; d: string } | null>(null);
   const [dBusy, setDBusy] = useState(false);
+  const [creator, setCreator] = useState<(CreatorInfo & { mint: string }) | null>(null);
+  useEffect(() => {
+    if (!act) return;
+    let alive = true;
+    const sn: any = act.snapshot;
+    getCreatorInfo(act.mint, sn.dev, sn.devBalancePct, sn.totalSupply, sn.devMints)
+      .then(r => { if (alive) setCreator({ ...r, mint: act.mint }); });
+    return () => { alive = false; };
+  }, [act?.mint, loadedAt]);
   const decide = async (d: 'BUY_DEMO' | 'PASS') => {
     if (!act) return;
     setDBusy(true);
@@ -263,6 +273,31 @@ export default function Index() {
                     <Text style={{ color: '#6b7280', fontSize: 10, marginTop: 8 }}>First match wins. Not financial advice.</Text>
                   </View>
                 ) : null}
+              </View>
+            );
+          })()}
+          {(() => {
+            const cr = creator && creator.mint === act.mint ? creator : null;
+            if (!cr) return null;
+            const fp = (v?: number) => (v === undefined || isNaN(v) ? 'UNKNOWN' : v < 0.01 ? '<0.01%' : v.toFixed(2) + '%');
+            const hm = (ms?: number) => { if (!ms) return ''; const d = new Date(ms); return (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes(); };
+            const has = cr.pct !== undefined && cr.basePct !== undefined;
+            const delta = has ? (cr.pct as number) - (cr.basePct as number) : 0;
+            const change = !cr.since ? 'First check. Changes appear on your next visit.'
+              : !has ? 'No earlier balance to compare.'
+              : Math.abs(delta) < 0.01 ? 'Unchanged since ' + hm(cr.since) + '.'
+              : 'Creator wallet balance ' + (delta < 0 ? 'fell' : 'rose') + ' from ' + fp(cr.basePct) + ' to ' + fp(cr.pct) + ' since ' + hm(cr.since) + '.';
+            const deployer = cr.mints === 1 ? 'NEW CREATOR: first token from this wallet.'
+              : cr.newMints && cr.newMints > 0 ? 'Deployer launched ' + cr.newMints + ' new token(s) since ' + hm(cr.since) + '.'
+              : cr.mints !== undefined ? 'Deployer has launched ' + cr.mints + ' tokens.' : '';
+            return (
+              <View style={{ marginTop: 16, padding: 14, borderWidth: 1, borderColor: '#374151', borderRadius: 10 }}>
+                <Text style={s.snapLabel}>CREATOR WALLET</Text>
+                <Text style={{ color: '#e5e7eb', fontSize: 18, fontWeight: '700', marginTop: 6 }}>{fp(cr.pct) + (cr.source === 'CHAIN' ? '  (read on-chain)' : cr.source === 'JUPITER' ? '  (via Jupiter)' : '')}</Text>
+                <Text style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 19, marginTop: 6 }}>{change}</Text>
+                {has && delta <= -0.01 ? <Text style={{ color: '#fbbf24', fontSize: 12, lineHeight: 18, marginTop: 6 }}>WHAT TO WATCH: whether the balance keeps falling, and whether liquidity drops at the same time.</Text> : null}
+                {deployer ? <Text style={{ color: '#9ca3af', fontSize: 12, lineHeight: 18, marginTop: 6 }}>{deployer}</Text> : null}
+                <Text style={{ color: '#6b7280', fontSize: 10, marginTop: 6 }}>Tracks the deployer wallet only. A lower balance is not proof of a sale.</Text>
               </View>
             );
           })()}

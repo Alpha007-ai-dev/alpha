@@ -21,6 +21,9 @@ export type Snapshot = {
   launchedAt?: string;
   graduatedAt?: string;
   launchpad?: string;
+  dev?: string;
+  totalSupply?: number;
+  devMints?: number;
 };
 
 export type Row = { label: string; m5: string; h1: string; h6: string; h24: string };
@@ -122,6 +125,9 @@ export async function getActivity(mint: string): Promise<Activity | null> {
     launchedAt: first ?? undefined,
     graduatedAt: tok.graduatedAt ?? undefined,
     launchpad: tok.launchpad ?? undefined,
+    dev: tok.dev ?? undefined,
+    totalSupply: isFinite(Number(tok.totalSupply)) ? Number(tok.totalSupply) : undefined,
+    devMints: isFinite(Number(tok.audit?.devMints)) ? Number(tok.audit.devMints) : undefined,
   };
 
   const NA = 'n/a';
