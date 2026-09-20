@@ -22,7 +22,7 @@ const POOL_TTL = 10 * 60 * 1000;
 const NO_POOL_TTL = 2 * 60 * 1000;
 const CANDLE_TTL = 60 * 1000;
 
-async function getPool(mint: string): Promise<{ pool: string | null; dex?: string; status: ChartResult['status'] }> {
+export async function getPool(mint: string): Promise<{ pool: string | null; dex?: string; status: ChartResult['status'] }> {
   const c = poolCache[mint];
   if (c && Date.now() - c.at < (c.pool ? POOL_TTL : NO_POOL_TTL)) {
     return { pool: c.pool, dex: c.dex, status: c.pool ? 'OK' : 'NO_POOL' };

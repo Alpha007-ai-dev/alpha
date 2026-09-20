@@ -5,6 +5,9 @@ import { getEvidence, Evidence } from '../../lib/evidence';
 import { getActivity, Activity } from '../../lib/activity';
 import { computeMarketState } from '../../lib/marketState';
 import { getCreatorInfo, CreatorInfo } from '../../lib/dev';
+import { C, F } from '../../lib/theme';
+import { getFlow, Flow, flowMoney } from '../../lib/flow';
+import { getPool } from '../../lib/chart';
 import { fetchCandles, ChartResult, ChartTf } from '../../lib/chart';
 import CandleChart from '../../components/CandleChart';
 import { logObservation, resolveOutcomes, journalStats, exportJournal, recordDecision } from '../../lib/journal';
@@ -44,6 +47,16 @@ export default function Index() {
   const [chartTf, setChartTf] = useState<ChartTf>('1H');
   const [chart, setChart] = useState<ChartResult | null>(null);
   const [chartBusy, setChartBusy] = useState(false);
+  const [flow, setFlow] = useState<(Flow & { mint: string }) | null>(null);
+  useEffect(() => {
+    if (!act) return;
+    let alive = true;
+    const sn: any = act.snapshot;
+    getPool(act.mint)
+      .then(p => getFlow(act.mint, p.pool, sn.dev))
+      .then(f => { if (alive) setFlow({ ...f, mint: act.mint }); });
+    return () => { alive = false; };
+  }, [act?.mint, loadedAt]);
   const [decision, setDecision] = useState<{ mint: string; d: string } | null>(null);
   const [dBusy, setDBusy] = useState(false);
   const [creator, setCreator] = useState<(CreatorInfo & { mint: string }) | null>(null);
@@ -219,7 +232,7 @@ export default function Index() {
                   <Text style={s.youngNote}>{!cv ? '' : cv.status === 'NO_POOL' ? 'Chart not available for this token yet.' : cv.status === 'RATE_LIMIT' ? 'Chart source is busy. Try REFRESH in a minute.' : 'Chart could not be loaded.'}</Text>
                 )}
                 {cv && cv.status === 'OK' ? (
-                  <Text style={{ color: '#6b7280', fontSize: 10, marginTop: 4 }}>{'Price range ' + chartTf + ' | GeckoTerminal | ' + (cv.dex ?? 'pool') + ' | ' + cv.candles.length + ' candles'}</Text>
+                  <Text style={{ color: C.sub, fontSize: 10, marginTop: 4 }}>{'Price range ' + chartTf + ' | GeckoTerminal | ' + (cv.dex ?? 'pool') + ' | ' + cv.candles.length + ' candles'}</Text>
                 ) : null}
               </View>
             );
@@ -244,35 +257,42 @@ export default function Index() {
           ) : null}
 
           {(() => {
-            const ms = computeMarketState(act.rawWindow, act.evidence?.window ?? '1h', !!act.rawWindow, act.metrics);
-            const col = ms.state === 'BUYING_MOMENTUM' ? '#22c55e'
-              : ms.state === 'CALM' || ms.state === 'INSUFFICIENT_DATA' ? '#6b7280'
-              : ms.state === 'MIXED' || ms.state === 'UNUSUAL_ACTIVITY' ? '#fbbf24'
-              : '#ef4444';
+            const fl = flow && flow.mint === act.mint ? flow : null;
+            if (!fl) return null;
+            if (fl.status !== 'OK') return (
+              <View style={{ marginTop: 16, padding: 14, borderWidth: 1, borderColor: C.border, borderRadius: 14 }}>
+                <Text style={s.snapLabel}>RIGHT NOW</Text>
+                <Text style={{ color: C.sub, fontSize: 12, marginTop: 6, fontFamily: F.mono }}>{fl.status === 'NO_POOL' ? 'No trade data for this token yet.' : fl.status === 'RATE_LIMIT' ? 'Trade source is busy. Try REFRESH in a minute.' : 'Trade data could not be loaded.'}</Text>
+              </View>
+            );
+            const col = fl.key === 'BUYING_MOMENTUM' ? C.green : fl.key === 'SELLING_PRESSURE' || fl.key === 'CREATOR_SELLING' ? C.red : fl.key === 'FEW_WALLETS' || fl.key === 'FAST_IN_AND_OUT' ? C.amber : C.text;
+            const row = (k: string, v: string, c?: string) => (
+              <View key={k} style={{ flexDirection: 'row', marginTop: 8 }}>
+                <Text style={[s.snapLabel, { width: 62, paddingTop: 2 }]}>{k}</Text>
+                <Text style={{ flex: 1, color: c ?? C.text, fontSize: 12, lineHeight: 18, fontFamily: F.mono }}>{v}</Text>
+              </View>
+            );
+            const sold = fl.creatorTrades.filter(x => x.kind === 'sell');
+            const creatorLine = sold.length
+              ? 'Sold ' + flowMoney(sold.reduce((x, y) => x + y.usd, 0)) + ' in this window.'
+              : fl.creatorTrades.length ? 'Bought in this window.' : 'No trades in this window.';
             return (
-              <View style={{ marginTop: 16, padding: 14, borderWidth: 1, borderColor: col, borderRadius: 10 }}>
-                <Text style={s.snapLabel}>{'MARKET STATE | ' + (act.evidence?.window ?? '').toUpperCase() + ' | RULES v' + ms.ruleVersion}</Text>
-                <Text style={{ color: col, fontSize: 20, fontWeight: '700', marginTop: 6 }}>{ms.label}</Text>
-                <Text style={[s.snapLabel, { marginTop: 12 }]}>WHAT IS HAPPENING</Text>
-                <Text style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 19, marginTop: 4 }}>{ms.happening}</Text>
-                <Text style={[s.snapLabel, { marginTop: 10 }]}>WHAT IT MEANS</Text>
-                <Text style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 19, marginTop: 4 }}>{ms.means}</Text>
-                <Text style={[s.snapLabel, { marginTop: 10, color: '#fbbf24' }]}>WHAT TO WATCH</Text>
-                <Text style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 19, marginTop: 4 }}>{ms.watch}</Text>
-                <Pressable onPress={() => setMsOpen(!msOpen)} style={{ marginTop: 12 }}>
-                  <Text style={s.refreshBtn}>{msOpen ? 'HIDE EVIDENCE' : 'VIEW EVIDENCE'}</Text>
-                </Pressable>
-                {msOpen ? (
-                  <View style={{ marginTop: 8 }}>
-                    <Text style={{ color: '#9ca3af', fontSize: 11, lineHeight: 16 }}>{ms.facts}</Text>
-                    {ms.trace.map(r => (
-                      <Text key={r.n} style={{ color: r.pass ? col : '#6b7280', fontSize: 11, lineHeight: 16, marginTop: 6 }}>
-                        {r.n + '  ' + r.state.replace(/_/g, ' ') + (r.pass ? '  [MATCH]' : '  [no]') + '\n     ' + r.rule}
-                      </Text>
-                    ))}
-                    <Text style={{ color: '#6b7280', fontSize: 10, marginTop: 8 }}>First match wins. Not financial advice.</Text>
+              <View style={{ marginTop: 16, padding: 14, borderWidth: 1, borderColor: C.border2, borderRadius: 14, backgroundColor: C.card }}>
+                <Text style={s.snapLabel}>{'RIGHT NOW · ' + fl.windowLabel}</Text>
+                <Text style={{ color: col, fontSize: 24, fontFamily: F.head, marginTop: 6 }}>{fl.label}</Text>
+                <Text style={{ color: C.sub, fontSize: 12, marginTop: 4, fontFamily: F.mono }}>{fl.support}</Text>
+                {row('PACE', fl.trades + ' trades in ' + fl.minutes + ' min.')}
+                {row('WHO', fl.buyWallets + ' wallets bought ' + flowMoney(fl.buyUsd) + ' · ' + fl.sellWallets + ' sold ' + flowMoney(fl.sellUsd) + '. ' + fl.bothWallets + ' did both.')}
+                {row('CREATOR', creatorLine, sold.length ? C.red : C.green)}
+                {fl.repeatAmount || fl.dustPct >= 25 ? (
+                  <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border }}>
+                    <Text style={s.snapLabel}>TRADE PATTERNS</Text>
+                    {fl.repeatAmount ? <Text style={{ color: C.text, fontSize: 12, marginTop: 6, lineHeight: 18, fontFamily: F.mono }}>{fl.repeatAmount.count + ' trades of exactly $' + fl.repeatAmount.usd.toFixed(2) + '.'}</Text> : null}
+                    {fl.dustPct >= 25 ? <Text style={{ color: C.text, fontSize: 12, marginTop: 4, lineHeight: 18, fontFamily: F.mono }}>{Math.round(fl.dustPct) + '% of trades were under $5.'}</Text> : null}
+                    <Text style={{ color: C.muted, fontSize: 10, marginTop: 6, lineHeight: 15, fontFamily: F.mono }}>Repeated identical amounts and fast in-and-out trading are common patterns of automated trading. They are not proof of it.</Text>
                   </View>
                 ) : null}
+                <Text style={{ color: C.muted, fontSize: 10, marginTop: 10, fontFamily: F.mono }}>Source: GeckoTerminal trades. Not financial advice.</Text>
               </View>
             );
           })()}
@@ -293,11 +313,11 @@ export default function Index() {
             return (
               <View style={{ marginTop: 16, padding: 14, borderWidth: 1, borderColor: '#374151', borderRadius: 10 }}>
                 <Text style={s.snapLabel}>CREATOR WALLET</Text>
-                <Text style={{ color: '#e5e7eb', fontSize: 18, fontWeight: '700', marginTop: 6 }}>{fp(cr.pct) + (cr.source === 'CHAIN' ? '  (read on-chain)' : cr.source === 'JUPITER' ? '  (via Jupiter)' : '')}</Text>
-                <Text style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 19, marginTop: 6 }}>{change}</Text>
-                {has && delta <= -0.01 ? <Text style={{ color: '#fbbf24', fontSize: 12, lineHeight: 18, marginTop: 6 }}>WHAT TO WATCH: whether the balance keeps falling, and whether liquidity drops at the same time.</Text> : null}
-                {deployer ? <Text style={{ color: '#9ca3af', fontSize: 12, lineHeight: 18, marginTop: 6 }}>{deployer}</Text> : null}
-                <Text style={{ color: '#6b7280', fontSize: 10, marginTop: 6 }}>Tracks the deployer wallet only. A lower balance is not proof of a sale.</Text>
+                <Text style={{ color: C.text, fontSize: 18, fontWeight: '700', marginTop: 6 }}>{fp(cr.pct) + (cr.source === 'CHAIN' ? '  (read on-chain)' : cr.source === 'JUPITER' ? '  (via Jupiter)' : '')}</Text>
+                <Text style={{ color: C.text, fontSize: 13, lineHeight: 19, marginTop: 6 }}>{change}</Text>
+                {has && delta <= -0.01 ? <Text style={{ color: C.amber, fontSize: 12, lineHeight: 18, marginTop: 6 }}>WHAT TO WATCH: whether the balance keeps falling, and whether liquidity drops at the same time.</Text> : null}
+                {deployer ? <Text style={{ color: C.sub, fontSize: 12, lineHeight: 18, marginTop: 6 }}>{deployer}</Text> : null}
+                <Text style={{ color: C.sub, fontSize: 10, marginTop: 6 }}>Tracks the deployer wallet only. A lower balance is not proof of a sale.</Text>
               </View>
             );
           })()}
@@ -307,18 +327,18 @@ export default function Index() {
               <View style={{ marginTop: 16, padding: 14, borderWidth: 1, borderColor: '#374151', borderRadius: 10 }}>
                 <Text style={s.snapLabel}>YOUR DECISION</Text>
                 {dNow ? (
-                  <Text style={{ color: '#e5e7eb', fontSize: 13, lineHeight: 19, marginTop: 8 }}>{dNow === 'ERROR' ? 'Could not save the decision. Try again.' : 'Saved: ' + (dNow === 'BUY_DEMO' ? 'BUY DEMO' : 'PASS') + '. Alpha measures what happens next at 1h, 6h and 24h.'}</Text>
+                  <Text style={{ color: C.text, fontSize: 13, lineHeight: 19, marginTop: 8 }}>{dNow === 'ERROR' ? 'Could not save the decision. Try again.' : 'Saved: ' + (dNow === 'BUY_DEMO' ? 'BUY DEMO' : 'PASS') + '. Alpha measures what happens next at 1h, 6h and 24h.'}</Text>
                 ) : (
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                    <Pressable disabled={dBusy} onPress={() => decide('BUY_DEMO')} style={{ flex: 1, height: 48, borderRadius: 8, backgroundColor: '#22c55e', alignItems: 'center', justifyContent: 'center' }}>
+                    <Pressable disabled={dBusy} onPress={() => decide('BUY_DEMO')} style={{ flex: 1, height: 48, borderRadius: 8, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ color: '#052e16', fontWeight: '700', fontSize: 13 }}>BUY DEMO</Text>
                     </Pressable>
                     <Pressable disabled={dBusy} onPress={() => decide('PASS')} style={{ flex: 1, height: 48, borderRadius: 8, borderWidth: 1, borderColor: '#4b5563', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: '#e5e7eb', fontWeight: '700', fontSize: 13 }}>PASS</Text>
+                      <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>PASS</Text>
                     </Pressable>
                   </View>
                 )}
-                <Text style={{ color: '#6b7280', fontSize: 10, marginTop: 8 }}>Demo only. No funds move. Not financial advice.</Text>
+                <Text style={{ color: C.sub, fontSize: 10, marginTop: 8 }}>Demo only. No funds move. Not financial advice.</Text>
               </View>
             );
           })()}
@@ -512,100 +532,100 @@ export default function Index() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0a0a0a' },
-  brand: { color: '#e5e7eb', fontSize: 22, letterSpacing: 6, fontWeight: '700' },
-  tag: { color: '#4b5563', fontSize: 11, marginTop: 6, marginBottom: 16 },
-  wallet: { borderWidth: 1, borderColor: '#525252', paddingVertical: 8, paddingHorizontal: 12, alignSelf: 'flex-start', marginBottom: 20 },
+  root: { flex: 1, backgroundColor: C.bg },
+  brand: { color: C.text, fontSize: 22, letterSpacing: 6, fontFamily: F.head },
+  tag: { color: C.muted, fontSize: 11, marginTop: 6, marginBottom: 16 },
+  wallet: { borderWidth: 1, borderColor: C.border2, paddingVertical: 8, paddingHorizontal: 12, alignSelf: 'flex-start', marginBottom: 20 },
   walletText: { color: '#a3a3a3', fontSize: 10, letterSpacing: 1, fontWeight: '700' },
-  input: { borderWidth: 1, borderColor: '#262626', color: '#e5e7eb', padding: 12, minHeight: 90, fontSize: 13, textAlignVertical: 'top' },
-  btn: { borderWidth: 1, borderColor: '#22c55e', paddingVertical: 12, marginTop: 12, alignItems: 'center' },
-  btnText: { color: '#22c55e', letterSpacing: 2, fontSize: 12, fontWeight: '700' },
-  tokenLine: { color: '#e5e7eb', fontSize: 20, fontWeight: '700' },
-  tokenName: { color: '#6b7280', fontSize: 12, marginTop: 2 },
+  input: { borderWidth: 1, borderColor: C.border, color: C.text, padding: 12, minHeight: 90, fontSize: 13, textAlignVertical: 'top' },
+  btn: { borderWidth: 1, borderColor: C.green, paddingVertical: 12, marginTop: 12, alignItems: 'center' },
+  btnText: { color: C.green, letterSpacing: 2, fontSize: 12, fontWeight: '700' },
+  tokenLine: { color: C.text, fontSize: 22, fontFamily: F.head },
+  tokenName: { color: C.sub, fontSize: 12, marginTop: 2 },
   freshRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
-  freshText: { color: '#4b5563', fontSize: 9, letterSpacing: 1 },
-  refreshBtn: { color: '#3b82f6', fontSize: 10, letterSpacing: 1, fontWeight: '700', borderWidth: 1, borderColor: '#3b82f6', paddingVertical: 5, paddingHorizontal: 12 },
-  youngNote: { color: '#fbbf24', fontSize: 10, marginTop: 10, lineHeight: 15 },
-  snapGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 14, borderWidth: 1, borderColor: '#262626' },
+  freshText: { color: C.muted, fontSize: 9, letterSpacing: 1 },
+  refreshBtn: { color: C.green, fontSize: 10, letterSpacing: 1, fontWeight: '700', borderWidth: 1, borderColor: C.green, paddingVertical: 5, paddingHorizontal: 12 },
+  youngNote: { color: C.amber, fontSize: 10, marginTop: 10, lineHeight: 15 },
+  snapGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 14, borderWidth: 1, borderColor: C.border, borderRadius: 12, overflow: 'hidden', backgroundColor: C.card2 },
   snapCell: { width: '33.33%', padding: 10 },
-  snapLabel: { color: '#4b5563', fontSize: 9, letterSpacing: 1 },
-  snapVal: { color: '#e5e7eb', fontSize: 13, fontWeight: '600', marginTop: 2 },
+  snapLabel: { color: C.sub, fontSize: 9, letterSpacing: 1.5, fontFamily: F.mono },
+  snapVal: { color: C.text, fontSize: 14, fontFamily: F.monoMed, marginTop: 3 },
   tabs: { flexDirection: 'row', gap: 8, marginTop: 16, marginBottom: 14 },
-  tab: { borderWidth: 1, borderColor: '#262626', paddingVertical: 8, paddingHorizontal: 12, flex: 1, alignItems: 'center' },
-  tabOn: { borderColor: '#3b82f6' },
-  tabText: { color: '#4b5563', fontSize: 10, letterSpacing: 1, fontWeight: '700' },
-  tabTextOn: { color: '#3b82f6' },
-  tableHead: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#262626' },
+  tab: { borderWidth: 1, borderColor: C.border, paddingVertical: 8, paddingHorizontal: 12, flex: 1, alignItems: 'center' },
+  tabOn: { borderColor: C.green },
+  tabText: { color: C.muted, fontSize: 10, letterSpacing: 1, fontWeight: '700' },
+  tabTextOn: { color: C.green },
+  tableHead: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: C.border },
   thLabel: { width: 72 },
-  th: { flex: 1, color: '#4b5563', fontSize: 9, letterSpacing: 1, textAlign: 'right' },
-  tr: { flexDirection: 'row', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#171717' },
-  tdLabel: { width: 72, color: '#9ca3af', fontSize: 11 },
+  th: { flex: 1, color: C.muted, fontSize: 9, letterSpacing: 1, textAlign: 'right' },
+  tr: { flexDirection: 'row', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.border },
+  tdLabel: { width: 72, color: C.sub, fontSize: 11 },
   td: { flex: 1, fontSize: 11, textAlign: 'right' },
   status: { alignSelf: 'flex-start', borderWidth: 1, paddingVertical: 6, paddingHorizontal: 12, fontSize: 12, letterSpacing: 2, fontWeight: '700' },
-  meta: { color: '#6b7280', fontSize: 10, letterSpacing: 1, marginTop: 10 },
+  meta: { color: C.sub, fontSize: 10, letterSpacing: 1, marginTop: 10 },
   note: { fontSize: 12, marginTop: 8 },
-  evErr: { color: '#ef4444', fontSize: 12, marginTop: 12 },
-  footNote: { color: '#374151', fontSize: 9, marginTop: 12 },
-  reading: { color: '#9ca3af', fontSize: 11, marginTop: 6, fontStyle: 'italic' },
-  expBtn: { borderWidth: 1, borderColor: '#8b5cf6', paddingVertical: 10, marginTop: 16, alignItems: 'center' },
-  expBtnText: { color: '#8b5cf6', fontSize: 11, letterSpacing: 2, fontWeight: '700' },
-  para: { borderLeftWidth: 2, borderLeftColor: '#8b5cf6', paddingLeft: 12, marginTop: 14 },
-  paraTitle: { color: '#e5e7eb', fontSize: 13, fontWeight: '700' },
-  paraFact: { color: '#6b7280', fontSize: 11, marginTop: 3 },
-  paraText: { color: '#d1d5db', fontSize: 12, marginTop: 6, lineHeight: 17 },
-  swapBox: { borderWidth: 1, borderColor: '#22c55e', padding: 14, marginTop: 20 },
-  swapHead: { color: '#22c55e', fontSize: 11, letterSpacing: 2, fontWeight: '700', marginBottom: 12 },
-  swapLabel: { color: '#4b5563', fontSize: 9, letterSpacing: 1 },
-  swapInput: { borderWidth: 1, borderColor: '#262626', color: '#e5e7eb', padding: 10, fontSize: 18, marginTop: 4 },
-  swapOut: { color: '#22c55e', fontSize: 20, fontWeight: '700', marginTop: 4 },
-  quoteBtn: { borderWidth: 1, borderColor: '#22c55e', paddingVertical: 10, marginTop: 10, alignItems: 'center' },
-  quoteBtnText: { color: '#22c55e', fontSize: 11, letterSpacing: 2, fontWeight: '700' },
+  evErr: { color: C.red, fontSize: 12, marginTop: 12 },
+  footNote: { color: C.muted, fontSize: 9, marginTop: 12 },
+  reading: { color: C.sub, fontSize: 11, marginTop: 6, fontStyle: 'italic' },
+  expBtn: { borderWidth: 1, borderColor: C.amber, paddingVertical: 10, marginTop: 16, alignItems: 'center' },
+  expBtnText: { color: C.amber, fontSize: 11, letterSpacing: 2, fontWeight: '700' },
+  para: { borderLeftWidth: 2, borderLeftColor: C.amber, paddingLeft: 12, marginTop: 14 },
+  paraTitle: { color: C.text, fontSize: 13, fontWeight: '700' },
+  paraFact: { color: C.sub, fontSize: 11, marginTop: 3 },
+  paraText: { color: C.text, fontSize: 12, marginTop: 6, lineHeight: 17 },
+  swapBox: { borderWidth: 1, borderColor: C.green, padding: 14, marginTop: 20 },
+  swapHead: { color: C.green, fontSize: 11, letterSpacing: 2, fontWeight: '700', marginBottom: 12 },
+  swapLabel: { color: C.muted, fontSize: 9, letterSpacing: 1 },
+  swapInput: { borderWidth: 1, borderColor: C.border, color: C.text, padding: 10, fontSize: 18, marginTop: 4 },
+  swapOut: { color: C.green, fontSize: 20, fontWeight: '700', marginTop: 4 },
+  quoteBtn: { borderWidth: 1, borderColor: C.green, paddingVertical: 10, marginTop: 10, alignItems: 'center' },
+  quoteBtnText: { color: C.green, fontSize: 11, letterSpacing: 2, fontWeight: '700' },
   qRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  qKey: { color: '#6b7280', fontSize: 11 },
-  qVal: { color: '#d1d5db', fontSize: 11 },
+  qKey: { color: C.sub, fontSize: 11 },
+  qVal: { color: C.text, fontSize: 11 },
   payRow: { flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },
-  payBtn: { borderWidth: 1, borderColor: '#262626', paddingVertical: 7, paddingHorizontal: 14 },
-  payBtnOn: { borderColor: '#22c55e' },
-  payBtnText: { color: '#4b5563', fontSize: 11, fontWeight: '700' },
-  payBtnTextOn: { color: '#22c55e' },
-  swapBtn: { backgroundColor: '#22c55e', paddingVertical: 14, marginTop: 16, alignItems: 'center' },
-  swapBtnText: { color: '#0a0a0a', fontSize: 13, letterSpacing: 2, fontWeight: '700' },
-  evToggle: { color: '#3b82f6', fontSize: 9, letterSpacing: 1, fontWeight: '700', marginTop: 10 },
-  evBox: { borderLeftWidth: 2, borderLeftColor: '#3b82f6', paddingLeft: 10, marginTop: 8 },
-  evFact: { color: '#d1d5db', fontSize: 11, lineHeight: 16 },
-  evSrc: { color: '#374151', fontSize: 9, marginTop: 4 },
-  confirmBox: { borderWidth: 1, borderColor: '#fbbf24', padding: 14, marginTop: 16 },
-  confirmHead: { color: '#fbbf24', fontSize: 10, letterSpacing: 2, fontWeight: '700' },
-  confirmBuy: { color: '#e5e7eb', fontSize: 15, fontWeight: '700', marginTop: 10 },
-  confirmPay: { color: '#9ca3af', fontSize: 12, marginTop: 2 },
-  confirmSub: { color: '#4b5563', fontSize: 9, letterSpacing: 1, marginTop: 14, marginBottom: 6 },
+  payBtn: { borderWidth: 1, borderColor: C.border, paddingVertical: 7, paddingHorizontal: 14 },
+  payBtnOn: { borderColor: C.green },
+  payBtnText: { color: C.muted, fontSize: 11, fontWeight: '700' },
+  payBtnTextOn: { color: C.green },
+  swapBtn: { backgroundColor: C.green, paddingVertical: 14, marginTop: 16, alignItems: 'center' },
+  swapBtnText: { color: C.greenInk, fontSize: 13, letterSpacing: 2, fontWeight: '700' },
+  evToggle: { color: C.green, fontSize: 9, letterSpacing: 1, fontWeight: '700', marginTop: 10 },
+  evBox: { borderLeftWidth: 2, borderLeftColor: C.green, paddingLeft: 10, marginTop: 8 },
+  evFact: { color: C.text, fontSize: 11, lineHeight: 16 },
+  evSrc: { color: C.muted, fontSize: 9, marginTop: 4 },
+  confirmBox: { borderWidth: 1, borderColor: C.amber, padding: 14, marginTop: 16 },
+  confirmHead: { color: C.amber, fontSize: 10, letterSpacing: 2, fontWeight: '700' },
+  confirmBuy: { color: C.text, fontSize: 15, fontWeight: '700', marginTop: 10 },
+  confirmPay: { color: C.sub, fontSize: 12, marginTop: 2 },
+  confirmSub: { color: C.muted, fontSize: 9, letterSpacing: 1, marginTop: 14, marginBottom: 6 },
   confirmRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  confirmKey: { color: '#9ca3af', fontSize: 11 },
+  confirmKey: { color: C.sub, fontSize: 11 },
   confirmVal: { fontSize: 11, fontWeight: '700' },
-  cancelText: { color: '#6b7280', fontSize: 10, letterSpacing: 1, textAlign: 'center', marginTop: 12 },
-  sigOk: { color: '#22c55e', fontSize: 11, marginTop: 10 },
-  card: { borderWidth: 1, borderColor: '#262626', padding: 12, marginTop: 12 },
-  sym: { color: '#e5e7eb', fontSize: 16, fontWeight: '700' },
-  badge: { color: '#22c55e', fontSize: 10, letterSpacing: 1, marginTop: 4 },
-  warn: { color: '#ef4444', fontSize: 10, letterSpacing: 1, marginTop: 4 },
-  name: { color: '#9ca3af', fontSize: 12, marginTop: 4 },
-  mint: { color: '#6b7280', fontSize: 10, marginTop: 8 },
-  src: { color: '#4b5563', fontSize: 10, marginTop: 4 },
-  analyzeBtn: { borderWidth: 1, borderColor: '#3b82f6', paddingVertical: 8, marginTop: 10, alignItems: 'center' },
-  analyzeText: { color: '#3b82f6', fontSize: 11, letterSpacing: 2, fontWeight: '700' },
-  sigRow: { borderWidth: 1, borderColor: '#262626', padding: 12, marginTop: 10 },
+  cancelText: { color: C.sub, fontSize: 10, letterSpacing: 1, textAlign: 'center', marginTop: 12 },
+  sigOk: { color: C.green, fontSize: 11, marginTop: 10 },
+  card: { borderWidth: 1, borderColor: C.border, padding: 12, marginTop: 12 },
+  sym: { color: C.text, fontSize: 16, fontWeight: '700' },
+  badge: { color: C.green, fontSize: 10, letterSpacing: 1, marginTop: 4 },
+  warn: { color: C.red, fontSize: 10, letterSpacing: 1, marginTop: 4 },
+  name: { color: C.sub, fontSize: 12, marginTop: 4 },
+  mint: { color: C.sub, fontSize: 10, marginTop: 8 },
+  src: { color: C.muted, fontSize: 10, marginTop: 4 },
+  analyzeBtn: { borderWidth: 1, borderColor: C.green, paddingVertical: 8, marginTop: 10, alignItems: 'center' },
+  analyzeText: { color: C.green, fontSize: 11, letterSpacing: 2, fontWeight: '700' },
+  sigRow: { borderWidth: 1, borderColor: C.border, padding: 12, marginTop: 10 },
   sigHead: { flexDirection: 'row', justifyContent: 'space-between' },
-  sigLabel: { color: '#e5e7eb', fontSize: 13, fontWeight: '600' },
+  sigLabel: { color: C.text, fontSize: 13, fontFamily: F.monoMed },
   sigLevel: { fontSize: 10, letterSpacing: 1, fontWeight: '700' },
-  sigValue: { color: '#9ca3af', fontSize: 14, marginTop: 6, fontWeight: '600' },
-  sigDetail: { color: '#4b5563', fontSize: 11, marginTop: 4 },
+  sigValue: { color: C.text, fontSize: 15, marginTop: 6, fontFamily: F.monoMed },
+  sigDetail: { color: C.muted, fontSize: 11, marginTop: 4 },
   sigFoot: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  sigSource: { color: '#374151', fontSize: 9 },
+  sigSource: { color: C.muted, fontSize: 9 },
   sigEdge: { color: '#78716c', fontSize: 9 },
   jRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 30, borderTopWidth: 1, borderTopColor: '#1f1f1f', paddingTop: 10 },
-  jText: { color: '#374151', fontSize: 9, letterSpacing: 1 },
-  jExport: { color: '#6b7280', fontSize: 9, letterSpacing: 1 },
-  jDump: { color: '#6b7280', fontSize: 8, marginTop: 10 },
+  jText: { color: C.muted, fontSize: 9, letterSpacing: 1 },
+  jExport: { color: C.sub, fontSize: 9, letterSpacing: 1 },
+  jDump: { color: C.sub, fontSize: 8, marginTop: 10 },
 });
 
 
